@@ -65,6 +65,9 @@ node -e "for (let i=0;i<4;i++) console.log(require('crypto').randomBytes(16).toS
 
 ## 5. Первый запуск Strapi
 
+Все команды Strapi выполняются **из каталога `cms/`** — из корня репозитория их нет
+(см. «Частые проблемы»).
+
 ```bash
 cd cms
 npm run develop
@@ -77,6 +80,33 @@ npm run develop
 
 - админка открывается;
 - в Content Manager появляются типы `Category`, `Fish` (когда их создадут).
+
+### Режимы запуска
+
+| Команда | Что делает | Когда нужна |
+| --- | --- | --- |
+| `npm run develop` | dev-режим, пересобирает админку на лету | повседневная работа |
+| `npm run build` | собирает админку в `build/` | перед `npm run start` (prod) |
+| `npm run start` | prod-режим, **без** hot-reload | проверка прод-сборки |
+
+В dev-режиме `npm run build` обычно не нужен. Если админка показывает старую версию —
+останови Strapi, выполни `npm run build` и запусти снова.
+
+### Остановка и повторный запуск
+
+Strapi останавливается в том терминале, где он запущен: **Ctrl+C** (иногда дважды). Закрытие
+окна терминала тоже завершает процесс. Данные при этом не теряются: и админ-аккаунт, и контент
+лежат в SQLite-файле `cms/.tmp/data.db`.
+
+Повторный запуск — те же две команды:
+
+```bash
+cd cms
+npm run develop
+```
+
+Признак успеха: в логе `Strapi started successfully`, админка открывается, а вход выполняется
+**теми же** логином и паролем (никакой регистрации заново быть не должно).
 
 ## 6. API-токен (после появления content-types)
 
@@ -99,6 +129,31 @@ npm run develop
 `DATABASE_FILENAME=` пустая, путь схлопывается в каталог проекта, и SQLite падает.
 Решение: `DATABASE_FILENAME=.tmp/data.db` (уже есть в `cms/.env.example`).
 
+**`npm error Missing script: "develop"`**
+
+Команда запущена не из того каталога. Скрипты `develop`/`build`/`start` живут в
+`cms/package.json`, поэтому сначала `cd cms`. Тот же смысл у ошибки
+`This command requires a Strapi project`: Strapi CLI ищет проект в текущем каталоге.
+
+**Порт 1337 занят (`EADDRINUSE`)**
+
+Значит, Strapi уже запущен в другом окне (или остался висеть после некорректного закрытия).
+Найди и заверши процесс:
+
+```powershell
+netstat -ano | findstr :1337      # PID — в последнем столбце
+taskkill /PID <PID> /F
+```
+
+На Ubuntu-сервере:
+
+```bash
+ss -ltnp | grep :1337             # или: lsof -i :1337
+kill <PID>
+```
+
+Либо запусти на другом порту: `PORT=1338 npm run develop` (переменная `PORT` в `cms/.env`).
+
 **`strapi export`/`import` печатает строки в stderr**
 
 Strapi пишет прогресс в stderr, поэтому PowerShell может показать это как `NativeCommandError`.
@@ -112,4 +167,5 @@ Strapi пишет прогресс в stderr, поэтому PowerShell може
 - [ ] `cms/.env` заполнен своими секретами
 - [ ] Strapi запускается, админка открывается
 - [ ] создан локальный администратор
+- [ ] Strapi перезапускается после закрытия консоли, вход теми же логином и паролем
 - [ ] skills восстановлены из `skills-lock.json` (`.agents/skills/` не пуст)

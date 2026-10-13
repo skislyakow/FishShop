@@ -1,0 +1,32 @@
+# .gitignore
+
+# --- ОС и редакторы ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# --- Секреты ---
+.env
+.env.*
+!.env.example
+
+# --- Node ---
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# --- Strapi ---
+cms/.tmp/
+cms/.cache/
+cms/.strapi/
+cms/build/
+cms/dist/
+
+# --- Бэкапы данных Strapi (передаются вне git) ---
+backups/*
+!backups/.gitkeep
+*.tar
+*.tar.gz
+*.tar.gz.enc

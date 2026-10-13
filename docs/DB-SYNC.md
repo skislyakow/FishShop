@@ -18,17 +18,18 @@
 
 ## Команды
 
-В `cms/package.json` добавлены два скрипта:
+Работать можно из корня репозитория (скрипты-обёртки не зависят от платформы):
 
 ```bash
-cd cms
-
-# Выгрузить текущее состояние всей БД + uploads в ../backups/strapi-export.tar.gz
-npm run db:export
+# Выгрузить снапшот всей БД + uploads в backups/strapi-export.tar.gz
+npm run db:snapshot
 
 # Залить архив (УДАЛЯЕТ текущие данные и подменяет их содержимым архива)
 npm run db:import
 ```
+
+Те же команды доступны из `cms/` (`npm run db:export` и `npm run db:import`) — корневые
+`db:snapshot` / `db:import` просто вызывают их через `npm --prefix cms`.
 
 Под капотом:
 
@@ -39,6 +40,15 @@ strapi import -f ../backups/strapi-export.tar.gz --force
 
 Полный синтаксис и опции — <https://docs.strapi.io/cms/features/data-management>.
 
+## Снапшот по запросу
+
+Автоматики нет: снапшот делается только когда его явно попросят. Формулировка «сделай снапшот
+базы» означает одно действие — **`npm run db:snapshot` из корня репозитория**. Результат:
+`backups/strapi-export.tar.gz` (записи + фото).
+
+Импорт — отдельная сознательная команда `npm run db:import`, потому что он уничтожает локальные
+данные. Полный порядок — в ритуале ниже.
+
 ## Ритуал передачи данных
 
 Данные передаются **в одну сторону** и только когда вторая машина готова их принять.
@@ -46,7 +56,7 @@ strapi import -f ../backups/strapi-export.tar.gz --force
 **Машина-источник (у кого свежие данные):**
 
 1. Убедиться, что Strapi не пишет в БД прямо сейчас (остановить dev-сервер).
-2. `cd cms && npm run db:export`
+2. `npm run db:snapshot` (из корня репозитория)
 3. Положить `backups/strapi-export.tar.gz` в общий канал передачи (см. ниже).
 4. Сообщить второй машине, что архив готов.
 
@@ -56,7 +66,7 @@ strapi import -f ../backups/strapi-export.tar.gz --force
 2. `git pull` и убедиться, что схема совпадает (`cms/src/api/**/schema.json`).
 3. При необходимости запустить Strapi один раз, чтобы он применил новые content-types.
 4. Положить свежий архив в `backups/strapi-export.tar.gz`.
-5. `cd cms && npm run db:import`
+5. `npm run db:import` (из корня репозитория)
 6. Запустить Strapi и проверить каталог в админке.
 
 ### Каналы передачи архива

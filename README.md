@@ -14,7 +14,8 @@
 | Путь | Назначение |
 | --- | --- |
 | `cms/` | Strapi-проект: каталог рыбы, заказы, права API |
-| `.agents/skills/`, `skills-lock.json` | инженерные skills mattpocock для opencode |
+| `skills-lock.json` | пин версий skills mattpocock (файлы `.agents/skills/` ставятся из него) |
+| `scripts/`, `package.json` | кроссплатформенный бутстрап окружения (`npm run setup`) |
 | `docs/` | урок, архитектура, синхронизация БД, workflow, setup, тикеты |
 | `docs/adr/` | архитектурные решения (ADR) |
 | `AGENTS.md` | инструкции для AI-агента, работающего в репозитории |
@@ -25,10 +26,11 @@
 - **Node.js** 20–26 (проверено на 24.14.1) + npm
 - **Strapi** 5.x, JavaScript
 - **SQLite** — локальная БД разработки (файл в `cms/.tmp/`)
-- **Telegram-бот** — следующий этап, стек ещё не выбран (см. `docs/ARCHITECTURE.md`)
+- **Telegram-бот** — следующий этап (план: Python + `uv`; см. `docs/ARCHITECTURE.md`)
 
 ## С чего начать
 
+0. Развернуть окружение одной командой из корня: `npm run setup`.
 1. [`docs/SETUP.md`](docs/SETUP.md) — подготовить машину (Node, зависимости, `.env`).
 2. [`docs/WORKFLOW.md`](docs/WORKFLOW.md) — правила работы на двух машинах.
 3. [`docs/DB-SYNC.md`](docs/DB-SYNC.md) — перенос данных Strapi между машинами.
@@ -39,6 +41,7 @@
 
 - [x] Репозиторий, skills mattpocock, документация
 - [x] Каркас Strapi-проекта (`cms/`)
+- [x] Кроссплатформенный бутстрап окружения (`npm run setup`)
 - [ ] Модель данных магазина (товары, разделы, заказы)
 - [ ] Наполнение витрины и API-доступ
 - [ ] Скрипты синхронизации БД между машинами

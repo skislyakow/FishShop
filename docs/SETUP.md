@@ -1,73 +1,71 @@
 # Настройка машины
 
-Инструкция одинаковая для **обеих** машин. Выполняется один раз.
+Инструкция одинаковая для **обеих** машин и для Ubuntu-сервера (с оговоркой про шаг 3).
+Выполняется один раз.
 
 ## 1. Инструменты
 
 Проверь версии:
 
-```powershell
+```bash
 node --version   # нужно 20.x – 26.x, проверено на 24.14.1
 npm --version
 git --version
 ```
 
-Если Node нет — поставь LTS с <https://nodejs.org/en/download> (или через `nvm-windows`).
+Если Node нет — поставь LTS с <https://nodejs.org/en/download> (или через `nvm`/`nvm-windows`).
 Strapi 5 требует Node.js 20–26; версия 16 из урока устарела.
 
-Опционально, для работы с Issues:
+Опционально:
 
-```powershell
-winget install GitHub.cli   # затем: gh auth login
-```
+- Для работы с Issues — GitHub CLI: `winget install GitHub.cli` (Windows) / `sudo apt install gh` (Ubuntu), затем `gh auth login`.
+- Для будущего Telegram-бота — `uv`: `winget install --id astral-sh.uv` (Windows) / `curl -LsSf https://astral.sh/uv/install.sh | sh` (Ubuntu). Пока бота нет, `uv` не обязателен — бутстрап только подскажет, если его не хватает.
 
 ## 2. Клонирование
 
-```powershell
+```bash
 git clone <URL-репозитория> FishShop
 cd FishShop
 ```
 
-## 3. Skills агента
+## 3. Развёртывание окружения
 
-Файлы skills уже в репозитории (`.agents/skills/`). На второй машине их можно восстановить из
-lockfile:
+Из корня репозитория:
 
-```powershell
-npx skills@latest experimental_install
+```bash
+npm run setup
 ```
 
-Обновить позже: `npx skills@latest update`.
+Скрипт `scripts/bootstrap.mjs` по шагам:
 
-## 4. Зависимости Strapi
+1. восстанавливает skills из `skills-lock.json` в `.agents/skills/` (в git их нет — это личный инструмент);
+2. ставит зависимости Strapi: `npm ci` в `cms/` (или `npm install`, если нет `package-lock.json`);
+3. создаёт `cms/.env` из `cms/.env.example`, если файла ещё нет;
+4. когда появится `bot/`, выполняет `uv sync --project bot` (иначе пропускает).
 
-В репозитории лежит `package-lock.json`, поэтому ставим детерминированно:
+Флаги: `--no-skills`, `--no-cms`, `--no-bot`, `--help`. Передавай их скрипту **напрямую** —
+`node scripts/bootstrap.mjs --no-cms`: npm перехватывает собственные флаги вида `--no-*`.
+Готовый npm-скрипт без skills — `npm run setup:prod`.
 
-```powershell
-cd cms
-npm ci
-```
+> **На сервере** dev-инструменты не нужны: `npm run setup:prod` (то же, но без skills).
 
-## 5. Переменные окружения
+Обновить skills позже: `npx skills@latest update`.
 
-Скопируй шаблон и заполни:
+## 4. Секреты
 
-```powershell
-Copy-Item cms\.env.example cms\.env
-```
+`setup` создал `cms/.env` из шаблона. Заполни секреты — они у **каждой** машины свои и через git
+не передаются. Сгенерируй значения:
 
-Сгенерируй четыре секрета и вставь их в `cms/.env` (поля `APP_KEYS`, `API_TOKEN_SALT`,
-`ADMIN_JWT_SECRET`, `TRANSFER_TOKEN_SALT`):
-
-```powershell
+```bash
 node -e "for (let i=0;i<4;i++) console.log(require('crypto').randomBytes(16).toString('base64'))"
 ```
 
-> У каждой машины свои значения — они не передаются через git.
+Вставь их в `cms/.env`: `APP_KEYS`, `API_TOKEN_SALT`, `ADMIN_JWT_SECRET`, `TRANSFER_TOKEN_SALT`
+(и, при желании, `JWT_SECRET`, `ENCRYPTION_KEY`).
 
-## 6. Первый запуск Strapi
+## 5. Первый запуск Strapi
 
-```powershell
+```bash
 cd cms
 npm run develop
 ```
@@ -80,7 +78,7 @@ npm run develop
 - админка открывается;
 - в Content Manager появляются типы `Category`, `Fish` (когда их создадут).
 
-## 7. API-токен (после появления content-types)
+## 6. API-токен (после появления content-types)
 
 1. Settings → API Tokens → **Create new API Token**.
 2. Тип: `Read-only` (для каталога бота) или `Full access` (для заказов).
@@ -88,7 +86,7 @@ npm run develop
 
 Токены создаются на каждой машине заново и в git не попадают.
 
-## 8. Синхронизация данных
+## 7. Синхронизация данных
 
 Если вторая машина передала архив — см. `docs/DB-SYNC.md`.
 
@@ -110,8 +108,8 @@ Strapi пишет прогресс в stderr, поэтому PowerShell може
 
 - [ ] `node -v` в диапазоне 20–26
 - [ ] репозиторий склонирован
+- [ ] `npm run setup` прошёл без ошибок
 - [ ] `cms/.env` заполнен своими секретами
-- [ ] `npm ci` в `cms/` прошёл без ошибок
 - [ ] Strapi запускается, админка открывается
 - [ ] создан локальный администратор
-- [ ] skills восстановлены из `skills-lock.json`
+- [ ] skills восстановлены из `skills-lock.json` (`.agents/skills/` не пуст)

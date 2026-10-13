@@ -30,3 +30,15 @@ backups/*
 *.tar
 *.tar.gz
 *.tar.gz.enc
+
+# --- Личные skills агента (восстанавливаются из skills-lock.json) ---
+.agents/skills/
+
+# --- Python (Telegram-бот, будущий bot/) ---
+bot/.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+bot/.env

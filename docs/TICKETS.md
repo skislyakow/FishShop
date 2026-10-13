@@ -8,11 +8,16 @@
 ## Этап 1. Strapi-магазин (критерий урока)
 
 - [x] **T0. Репозиторий и документация.**
-  git init, `.gitignore`, skills, доки. Проверка: репозиторий открывается, доки на месте.
+  git init, `.gitignore`, доки. Проверка: репозиторий открывается, доки на месте.
 
 - [x] **T1. Каркас Strapi-проекта.**
-  `cms/` создан, `npm ci`, `npm run develop` поднимает админку. Проверка: админка на
-  <http://localhost:1337/admin> создаёт администратора.
+  `cms/` создан, зависимости ставятся бутстрапом, `npm run develop` поднимает админку.
+  Проверка: админка на <http://localhost:1337/admin> создаёт администратора.
+
+- [x] **T1b. Бутстрап окружения.** ← T1
+  `scripts/bootstrap.mjs` + `npm run setup`: skills из `skills-lock.json`, `npm ci` в `cms/`,
+  `uv sync` для будущего `bot/`. Проверка: на чистой машине `npm run setup` идемпотентен,
+  `.agents/skills/` в `.gitignore`.
 
 - [ ] **T2. Модель данных магазина.** ← T1
   Создать content-types: `Category`, `Fish` (+ `draftAndPublish`), `Customer`, `Order`,

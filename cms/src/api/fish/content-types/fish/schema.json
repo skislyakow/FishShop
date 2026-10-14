@@ -1,0 +1,33 @@
+{
+  "kind": "collectionType",
+  "collectionName": "fishes",
+  "info": {
+    "singularName": "fish",
+    "pluralName": "fishes",
+    "displayName": "Fish",
+    "description": "Товар магазина: рыба или морепродукт с ценой за килограмм"
+  },
+  "options": {
+    "draftAndPublish": true
+  },
+  "attributes": {
+    "name": {
+      "type": "string",
+      "required": true
+    },
+    "description": {
+      "type": "text"
+    },
+    "pricePerKg": {
+      "type": "decimal",
+      "required": true
+    },
+    "images": {
+      "type": "media",
+      "multiple": true,
+      "allowedTypes": [
+        "images"
+      ]
+    }
+  }
+}

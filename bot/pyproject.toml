@@ -1,0 +1,14 @@
+[project]
+name = "fishshop-bot"
+version = "0.1.0"
+description = "Telegram-бот FishShop — тонкий клиент над REST API Strapi"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "requests>=2.32",
+    "python-dotenv>=1.0",
+]
+
+# Не пакет, а приложение: uv не собирает wheel, просто ставит зависимости в .venv.
+[tool.uv]
+package = false

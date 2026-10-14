@@ -48,7 +48,7 @@
 | Content-Type | UID | Ключевые поля |
 | --- | --- | --- |
 | Раздел | `api::category.category` | `name`, `slug`, `sortOrder`, relation `fish` (oneToMany) |
-| Товар | `api::fish.fish` | `name`, `slug`, `description`, `pricePerKg`, `inStock`, `images` (media, multiple), relation `category` (manyToOne); `draftAndPublish: true` |
+| Товар | `api::fish.fish` | `title` (string, required), `description` (text), `price` (decimal, required), `picture` (media, single); `draftAndPublish: true` |
 | Покупатель | `api::customer.customer` | `telegramUserId`, `name`, `phone` |
 | Заказ | `api::order.order` | `status` (enum), relation `customer` (manyToOne), relation `items` (oneToMany), relation `telegramMessageId`, `comment`, `total` |
 | Позиция заказа | `api::order-item.order-item` | relation `fish` (manyToOne), `quantityKg`, `pricePerKg` (снимок цены), `amount` |

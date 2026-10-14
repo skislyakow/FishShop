@@ -10,24 +10,25 @@
   "options": {
     "draftAndPublish": true
   },
+  "pluginOptions": {},
   "attributes": {
-    "name": {
+    "title": {
       "type": "string",
       "required": true
     },
     "description": {
       "type": "text"
     },
-    "pricePerKg": {
-      "type": "decimal",
-      "required": true
-    },
-    "images": {
+    "picture": {
       "type": "media",
-      "multiple": true,
+      "multiple": false,
       "allowedTypes": [
         "images"
       ]
+    },
+    "price": {
+      "type": "decimal",
+      "required": true
     }
   }
 }

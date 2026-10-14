@@ -1,9 +1,3 @@
-"""Тонкий клиент REST API Strapi для каталога FishShop.
-
-Единственное место, которое знает про HTTP, URL и токен. Остальной код бота
-работает с готовыми `Product`, а не с сырым JSON Strapi.
-"""
-
 from __future__ import annotations
 
 import os
@@ -21,8 +15,6 @@ class StrapiError(RuntimeError):
 
 @dataclass(frozen=True)
 class Product:
-    """Товар магазина, каким его видит бот."""
-
     id: int
     document_id: str
     title: str
@@ -32,9 +24,9 @@ class Product:
 
 
 class StrapiClient:
-    """Клиент каталога: ходит в Strapi с API-токеном."""
-
-    def __init__(self, base_url: str, token: str, *, timeout: float = TIMEOUT_SECONDS) -> None:
+    def __init__(
+        self, base_url: str, token: str, *, timeout: float = TIMEOUT_SECONDS
+    ) -> None:
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
         self._session = requests.Session()
@@ -42,14 +34,15 @@ class StrapiClient:
         self._session.headers["Accept"] = "application/json"
 
     def list_fishes(self) -> list[Product]:
-        """Возвращает опубликованные товары каталога (с картинками)."""
         url = f"{self._base_url}/api/fishes"
         try:
             response = self._session.get(
                 url, params={"populate": "picture"}, timeout=self._timeout
             )
         except requests.RequestException as exc:
-            raise StrapiError(f"Не удалось обратиться к Strapi по {url}: {exc}") from exc
+            raise StrapiError(
+                f"Не удалось обратиться к Strapi по {url}: {exc}"
+            ) from exc
 
         if response.status_code != 200:
             raise StrapiError(
@@ -57,7 +50,10 @@ class StrapiClient:
             )
 
         payload = response.json()
-        return [_to_product(item, self._base_url) for item in payload.get("data", [])]
+        return [
+            _to_product(item, self._base_url)
+            for item in payload.get("data", [])
+        ]
 
 
 def _to_product(item: dict, base_url: str) -> Product:
@@ -77,7 +73,6 @@ def _to_product(item: dict, base_url: str) -> Product:
 
 
 def client_from_env() -> StrapiClient:
-    """Собирает клиент из переменных окружения (`STRAPI_URL`, `STRAPI_API_TOKEN`)."""
     token = os.environ.get("STRAPI_API_TOKEN", "").strip()
     if not token:
         raise StrapiError(

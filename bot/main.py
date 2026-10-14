@@ -1,8 +1,3 @@
-"""Проверочный вход: выгружает каталог FishShop из Strapi и печатает его в консоль.
-
-Запуск (из каталога `bot/`):  uv run python main.py
-"""
-
 from __future__ import annotations
 
 import json
@@ -16,7 +11,6 @@ from strapi import StrapiError, client_from_env
 
 
 def force_utf8_output() -> None:
-    """Печатает кириллицу корректно независимо от локали Windows (иначе — кракозябры)."""
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
         if reconfigure is not None:
@@ -33,7 +27,13 @@ def main() -> int:
         print(f"Ошибка: {exc}")
         return 1
 
-    print(json.dumps([asdict(product) for product in products], ensure_ascii=False, indent=2))
+    print(
+        json.dumps(
+            [asdict(product) for product in products],
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
     print(f"\nВсего товаров: {len(products)}")
     return 0
 

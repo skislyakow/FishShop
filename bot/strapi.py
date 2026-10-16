@@ -10,7 +10,7 @@ TIMEOUT_SECONDS = 10.0
 
 
 class StrapiError(RuntimeError):
-    """Ошибка обращения к Strapi: сеть, статус ответа или отсутствие токена."""
+    pass
 
 
 @dataclass(frozen=True)

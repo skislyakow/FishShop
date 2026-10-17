@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 START = "START"
 ECHO = "ECHO"
 HANDLE_MENU = "HANDLE_MENU"
+HANDLE_DESCRIPTION = "HANDLE_DESCRIPTION"
 BACK_TO_LIST = "back"
 STATE_KEY_PREFIX = "state:"
 CAPTION_LIMIT = 1024
@@ -63,7 +64,7 @@ def products_keyboard(products: list[Product]) -> InlineKeyboardMarkup:
 
 def back_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("← К списку", callback_data=BACK_TO_LIST)]]
+        [[InlineKeyboardButton("← Назад", callback_data=BACK_TO_LIST)]]
     )
 
 
@@ -136,7 +137,7 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str
     if query.data == BACK_TO_LIST:
         return await send_products(update)
     if chat is None:
-        return START
+        return HANDLE_MENU
 
     try:
         product = await fetch_product(query.data)
@@ -145,7 +146,7 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str
         await context.bot.send_message(
             chat_id=chat.id, text="Товар недоступен, попробуйте позже."
         )
-        return START
+        return HANDLE_MENU
 
     picture: bytes | None = None
     if product.picture_url is not None:
@@ -159,7 +160,14 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str
     if query.message is not None:
         await delete_menu(context, chat.id, query.message.message_id)
 
-    return START
+    return HANDLE_DESCRIPTION
+
+
+async def handle_description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
+    query = update.callback_query
+    if query is not None:
+        await query.answer()
+    return await send_products(update)
 
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
@@ -174,6 +182,7 @@ STATES_FUNCTIONS: dict[str, Handler] = {
     START: start,
     ECHO: echo,
     HANDLE_MENU: handle_menu,
+    HANDLE_DESCRIPTION: handle_description,
 }
 
 

@@ -9,6 +9,7 @@ import redis
 from dotenv import load_dotenv
 from redis.exceptions import RedisError
 from telegram import Update
+from telegram.error import InvalidToken, TelegramError
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -127,6 +128,7 @@ def main() -> int:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("telegram.ext").setLevel(logging.CRITICAL)
 
     token = os.getenv("TELEGRAM_TOKEN")
     if not token:
@@ -151,7 +153,17 @@ def main() -> int:
     application.add_handler(CommandHandler("start", handle_users_reply))
 
     logger.info("Эхобот запущен. Напиши ему /start в Telegram.")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    try:
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
+    except InvalidToken:
+        logger.error("Telegram не принял токен. Проверь TELEGRAM_TOKEN в bot/.env")
+        return 1
+    except TelegramError as exc:
+        logger.error(
+            "Не удалось подключиться к Telegram (%s). Проверь VPN — api.telegram.org из РФ недоступен.",
+            type(exc).__name__,
+        )
+        return 1
     return 0
 
 

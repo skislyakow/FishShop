@@ -8,8 +8,8 @@ from typing import Awaitable, Callable
 import redis
 from dotenv import load_dotenv
 from redis.exceptions import RedisError
-from telegram import Update
-from telegram.error import InvalidToken, TelegramError
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.error import BadRequest, InvalidToken, TelegramError
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -30,11 +30,35 @@ _database: redis.Redis | None = None
 Handler = Callable[[Update, ContextTypes.DEFAULT_TYPE], Awaitable[str]]
 
 
+def main_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("Option 1", callback_data="1"),
+                InlineKeyboardButton("Option 2", callback_data="2"),
+            ],
+            [InlineKeyboardButton("Option 3", callback_data="3")],
+        ]
+    )
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
     message = update.effective_message
     if message is None:
         return START
-    await message.reply_text(text="Привет!")
+    await message.reply_text("Выберите вариант:", reply_markup=main_keyboard())
+    return ECHO
+
+
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
+    query = update.callback_query
+    if query is None:
+        return ECHO
+    await query.answer()
+    try:
+        await query.edit_message_text(text=f"Вы выбрали: {query.data}")
+    except BadRequest:
+        pass
     return ECHO
 
 
@@ -55,32 +79,30 @@ STATES_FUNCTIONS: dict[str, Handler] = {
 async def handle_users_reply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     db = get_database_connection()
 
-    if update.message is not None:
-        user_reply = update.message.text
-    elif update.callback_query is not None:
-        user_reply = update.callback_query.data
-    else:
-        return
-
     chat = update.effective_chat
     if chat is None:
         return
     chat_id = chat.id
 
-    user_state = START if user_reply == "/start" else get_state(db, chat_id)
-
-    state_handler = STATES_FUNCTIONS.get(user_state)
-    if state_handler is None:
-        logger.warning(
-            "Неизвестное состояние %r для chat_id=%s — начинаю заново", user_state, chat_id
-        )
-        state_handler = start
-        user_state = START
+    if update.callback_query is not None:
+        state_handler = button
+        where = "callback"
+    elif update.message is not None:
+        user_state = START if update.message.text == "/start" else get_state(db, chat_id)
+        state_handler = STATES_FUNCTIONS.get(user_state)
+        if state_handler is None:
+            logger.warning(
+                "Неизвестное состояние %r для chat_id=%s — начинаю заново", user_state, chat_id
+            )
+            state_handler = start
+        where = user_state
+    else:
+        return
 
     try:
         next_state = await state_handler(update, context)
     except Exception:
-        logger.exception("Ошибка в хэндлере состояния %s", user_state)
+        logger.exception("Ошибка в хэндлере (%s)", where)
         return
 
     set_state(db, chat_id, next_state)

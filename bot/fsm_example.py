@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 import os
 import sys
@@ -10,7 +11,7 @@ import redis
 from dotenv import load_dotenv
 from redis.exceptions import RedisError
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.error import InvalidToken, TelegramError
+from telegram.error import BadRequest, InvalidToken, TelegramError
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -29,6 +30,7 @@ ECHO = "ECHO"
 HANDLE_MENU = "HANDLE_MENU"
 BACK_TO_LIST = "back"
 STATE_KEY_PREFIX = "state:"
+CAPTION_LIMIT = 1024
 
 _database: redis.Redis | None = None
 
@@ -43,6 +45,11 @@ async def fetch_products() -> list[Product]:
 async def fetch_product(document_id: str) -> Product:
     client = client_from_env()
     return await asyncio.to_thread(client.get_fish, document_id)
+
+
+async def fetch_picture(url: str) -> bytes:
+    client = client_from_env()
+    return await asyncio.to_thread(client.download_picture, url)
 
 
 def products_keyboard(products: list[Product]) -> InlineKeyboardMarkup:
@@ -64,6 +71,12 @@ def product_card(product: Product) -> str:
     return f"{product.title}\n{product.price:g} ₽\n\n{product.description}"
 
 
+def product_caption(card: str) -> str:
+    if len(card) <= CAPTION_LIMIT:
+        return card
+    return card[: CAPTION_LIMIT - 1] + "…"
+
+
 async def send_products(update: Update) -> str:
     message = update.effective_message
     if message is None:
@@ -82,23 +95,70 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
     return await send_products(update)
 
 
+async def send_product_card(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    product: Product,
+    picture: bytes | None,
+) -> None:
+    card = product_card(product)
+    if picture is not None:
+        try:
+            await context.bot.send_photo(
+                chat_id=chat_id,
+                photo=io.BytesIO(picture),
+                caption=product_caption(card),
+                reply_markup=back_keyboard(),
+            )
+            return
+        except BadRequest as exc:
+            logger.error("Telegram не принял картинку товара %s: %s", product.title, exc)
+    await context.bot.send_message(
+        chat_id=chat_id, text=card, reply_markup=back_keyboard()
+    )
+
+
+async def delete_menu(
+    context: ContextTypes.DEFAULT_TYPE, chat_id: int, message_id: int
+) -> None:
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except TelegramError as exc:
+        logger.info("Не удалось удалить сообщение %s: %s", message_id, exc)
+
+
 async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
     query = update.callback_query
-    message = update.effective_message
+    chat = update.effective_chat
     if query is None or query.data is None:
         return await send_products(update)
     await query.answer()
     if query.data == BACK_TO_LIST:
         return await send_products(update)
+    if chat is None:
+        return START
+
     try:
         product = await fetch_product(query.data)
     except StrapiError as exc:
         logger.error("Не удалось получить товар %s: %s", query.data, exc)
-        if message is not None:
-            await message.reply_text("Товар недоступен, попробуйте позже.")
+        await context.bot.send_message(
+            chat_id=chat.id, text="Товар недоступен, попробуйте позже."
+        )
         return START
-    if message is not None:
-        await message.reply_text(product_card(product), reply_markup=back_keyboard())
+
+    picture: bytes | None = None
+    if product.picture_url is not None:
+        try:
+            picture = await fetch_picture(product.picture_url)
+        except StrapiError as exc:
+            logger.error("Не удалось скачать картинку %s: %s", product.title, exc)
+
+    await send_product_card(context, chat.id, product, picture)
+
+    if query.message is not None:
+        await delete_menu(context, chat.id, query.message.message_id)
+
     return START
 
 

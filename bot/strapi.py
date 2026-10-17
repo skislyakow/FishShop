@@ -47,6 +47,18 @@ class StrapiClient:
             raise StrapiError(f"Strapi не вернул товар {document_id}")
         return _to_product(item, self._base_url)
 
+    def download_picture(self, url: str) -> bytes:
+        try:
+            response = self._session.get(
+                url, timeout=self._timeout, headers={"Accept": "*/*"}
+            )
+        except requests.RequestException as exc:
+            raise StrapiError(f"Не удалось скачать картинку {url}: {exc}") from exc
+
+        if response.status_code != 200:
+            raise StrapiError(f"Strapi ответил {response.status_code} на GET {url}")
+        return response.content
+
     def _get_json(self, path: str, params: dict[str, str]) -> dict:
         url = f"{self._base_url}{path}"
         try:

@@ -34,11 +34,23 @@ class StrapiClient:
         self._session.headers["Accept"] = "application/json"
 
     def list_fishes(self) -> list[Product]:
-        url = f"{self._base_url}/api/fishes"
+        payload = self._get_json("/api/fishes", {"populate": "picture"})
+        return [
+            _to_product(item, self._base_url)
+            for item in payload.get("data", [])
+        ]
+
+    def get_fish(self, document_id: str) -> Product:
+        payload = self._get_json(f"/api/fishes/{document_id}", {"populate": "picture"})
+        item = payload.get("data")
+        if not isinstance(item, dict):
+            raise StrapiError(f"Strapi не вернул товар {document_id}")
+        return _to_product(item, self._base_url)
+
+    def _get_json(self, path: str, params: dict[str, str]) -> dict:
+        url = f"{self._base_url}{path}"
         try:
-            response = self._session.get(
-                url, params={"populate": "picture"}, timeout=self._timeout
-            )
+            response = self._session.get(url, params=params, timeout=self._timeout)
         except requests.RequestException as exc:
             raise StrapiError(
                 f"Не удалось обратиться к Strapi по {url}: {exc}"
@@ -50,10 +62,9 @@ class StrapiClient:
             )
 
         payload = response.json()
-        return [
-            _to_product(item, self._base_url)
-            for item in payload.get("data", [])
-        ]
+        if not isinstance(payload, dict):
+            raise StrapiError(f"Strapi вернул неожиданный ответ на GET {url}")
+        return payload
 
 
 def _to_product(item: dict, base_url: str) -> Product:

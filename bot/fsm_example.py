@@ -84,6 +84,7 @@ async def handle_users_reply(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
     chat_id = chat.id
 
+    state_handler: Handler | None
     if update.callback_query is not None:
         state_handler = button
         where = "callback"

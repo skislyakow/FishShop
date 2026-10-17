@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import sys
@@ -19,6 +20,8 @@ from telegram.ext import (
     filters,
 )
 
+from strapi import Product, StrapiError, client_from_env
+
 logger = logging.getLogger(__name__)
 
 START = "START"
@@ -30,14 +33,16 @@ _database: redis.Redis | None = None
 Handler = Callable[[Update, ContextTypes.DEFAULT_TYPE], Awaitable[str]]
 
 
-def main_keyboard() -> InlineKeyboardMarkup:
+async def fetch_products() -> list[Product]:
+    client = client_from_env()
+    return await asyncio.to_thread(client.list_fishes)
+
+
+def products_keyboard(products: list[Product]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [
-                InlineKeyboardButton("Option 1", callback_data="1"),
-                InlineKeyboardButton("Option 2", callback_data="2"),
-            ],
-            [InlineKeyboardButton("Option 3", callback_data="3")],
+            [InlineKeyboardButton(product.title, callback_data=product.document_id)]
+            for product in products
         ]
     )
 
@@ -46,7 +51,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
     message = update.effective_message
     if message is None:
         return START
-    await message.reply_text("Выберите вариант:", reply_markup=main_keyboard())
+    try:
+        products = await fetch_products()
+    except StrapiError as exc:
+        logger.error("Не удалось получить каталог: %s", exc)
+        await message.reply_text("Каталог недоступен, попробуйте позже.")
+        return ECHO
+    await message.reply_text("Выберите рыбу:", reply_markup=products_keyboard(products))
     return ECHO
 
 
@@ -56,7 +67,16 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
         return ECHO
     await query.answer()
     try:
-        await query.edit_message_text(text=f"Вы выбрали: {query.data}")
+        products = await fetch_products()
+    except StrapiError as exc:
+        logger.error("Не удалось получить каталог: %s", exc)
+        return ECHO
+    title = next(
+        (product.title for product in products if product.document_id == query.data),
+        query.data or "",
+    )
+    try:
+        await query.edit_message_text(text=f"Вы выбрали: {title}")
     except BadRequest:
         pass
     return ECHO

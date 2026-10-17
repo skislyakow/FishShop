@@ -10,7 +10,7 @@ import redis
 from dotenv import load_dotenv
 from redis.exceptions import RedisError
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.error import BadRequest, InvalidToken, TelegramError
+from telegram.error import InvalidToken, TelegramError
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 
 START = "START"
 ECHO = "ECHO"
+HANDLE_MENU = "HANDLE_MENU"
+BACK_TO_LIST = "back"
 STATE_KEY_PREFIX = "state:"
 
 _database: redis.Redis | None = None
@@ -38,6 +40,11 @@ async def fetch_products() -> list[Product]:
     return await asyncio.to_thread(client.list_fishes)
 
 
+async def fetch_product(document_id: str) -> Product:
+    client = client_from_env()
+    return await asyncio.to_thread(client.get_fish, document_id)
+
+
 def products_keyboard(products: list[Product]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
@@ -47,7 +54,17 @@ def products_keyboard(products: list[Product]) -> InlineKeyboardMarkup:
     )
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
+def back_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("← К списку", callback_data=BACK_TO_LIST)]]
+    )
+
+
+def product_card(product: Product) -> str:
+    return f"{product.title}\n{product.price:g} ₽\n\n{product.description}"
+
+
+async def send_products(update: Update) -> str:
     message = update.effective_message
     if message is None:
         return START
@@ -56,30 +73,33 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
     except StrapiError as exc:
         logger.error("Не удалось получить каталог: %s", exc)
         await message.reply_text("Каталог недоступен, попробуйте позже.")
-        return ECHO
+        return START
     await message.reply_text("Выберите рыбу:", reply_markup=products_keyboard(products))
-    return ECHO
+    return HANDLE_MENU
 
 
-async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
+    return await send_products(update)
+
+
+async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
     query = update.callback_query
-    if query is None:
-        return ECHO
+    message = update.effective_message
+    if query is None or query.data is None:
+        return await send_products(update)
     await query.answer()
+    if query.data == BACK_TO_LIST:
+        return await send_products(update)
     try:
-        products = await fetch_products()
+        product = await fetch_product(query.data)
     except StrapiError as exc:
-        logger.error("Не удалось получить каталог: %s", exc)
-        return ECHO
-    title = next(
-        (product.title for product in products if product.document_id == query.data),
-        query.data or "",
-    )
-    try:
-        await query.edit_message_text(text=f"Вы выбрали: {title}")
-    except BadRequest:
-        pass
-    return ECHO
+        logger.error("Не удалось получить товар %s: %s", query.data, exc)
+        if message is not None:
+            await message.reply_text("Товар недоступен, попробуйте позже.")
+        return START
+    if message is not None:
+        await message.reply_text(product_card(product), reply_markup=back_keyboard())
+    return START
 
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
@@ -93,37 +113,38 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
 STATES_FUNCTIONS: dict[str, Handler] = {
     START: start,
     ECHO: echo,
+    HANDLE_MENU: handle_menu,
 }
 
 
 async def handle_users_reply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     db = get_database_connection()
 
+    if update.callback_query is not None:
+        user_reply = update.callback_query.data
+    elif update.message is not None:
+        user_reply = update.message.text
+    else:
+        return
+
     chat = update.effective_chat
     if chat is None:
         return
     chat_id = chat.id
 
-    state_handler: Handler | None
-    if update.callback_query is not None:
-        state_handler = button
-        where = "callback"
-    elif update.message is not None:
-        user_state = START if update.message.text == "/start" else get_state(db, chat_id)
-        state_handler = STATES_FUNCTIONS.get(user_state)
-        if state_handler is None:
-            logger.warning(
-                "Неизвестное состояние %r для chat_id=%s — начинаю заново", user_state, chat_id
-            )
-            state_handler = start
-        where = user_state
-    else:
-        return
+    user_state = START if user_reply == "/start" else get_state(db, chat_id)
+
+    state_handler = STATES_FUNCTIONS.get(user_state)
+    if state_handler is None:
+        logger.warning(
+            "Неизвестное состояние %r для chat_id=%s — начинаю заново", user_state, chat_id
+        )
+        state_handler = start
 
     try:
         next_state = await state_handler(update, context)
     except Exception:
-        logger.exception("Ошибка в хэндлере (%s)", where)
+        logger.exception("Ошибка в хэндлере состояния %s", user_state)
         return
 
     set_state(db, chat_id, next_state)

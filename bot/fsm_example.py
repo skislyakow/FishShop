@@ -427,6 +427,26 @@ async def handle_cart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str
     return await send_cart(update, context)
 
 
+async def save_customer_contact(telegram_user_id: str, email: str) -> bool:
+    """Кладёт контакт покупателя в CMS (Strapi) и подтверждает успех.
+
+    Сбой — не исключение, а `False`: почта уже записана в консоль, поэтому
+    контакт не теряется, а сообщение пользователю можно подобрать честное.
+    """
+    try:
+        client = client_from_env()
+        customer = await asyncio.to_thread(client.save_customer, telegram_user_id, email)
+    except StrapiError as exc:
+        logger.error("Не удалось сохранить клиента %s в Strapi: %s", telegram_user_id, exc)
+        return False
+    logger.info(
+        "Клиент сохранён в CMS: documentId=%s, email=%s",
+        customer.document_id,
+        customer.email,
+    )
+    return True
+
+
 async def ask_email(update: Update) -> str:
     """Просит почту заказчика и уводит диалог в ожидание текстового ввода."""
     message = update.effective_message
@@ -460,14 +480,20 @@ async def handle_waiting_email(update: Update, context: ContextTypes.DEFAULT_TYP
         return WAITING_EMAIL
 
     email = match.group(0)
-    logger.info(
-        "Почта заказчика: %s (telegram_user_id=%s)",
-        email,
-        user.id if user is not None else None,
-    )
-    # Письмо продажникам уже записано в лог — даже если подтверждение не уйдёт,
-    # заказ не потерян.
-    await reply_text(message, f"Записал {email}. Продажники свяжутся с вами по почте.")
+    user_id = str(user.id) if user is not None else None
+    logger.info("Почта заказчика: %s (telegram_user_id=%s)", email, user_id)
+
+    # Контакт уходит в CMS (и в консоль) ещё до подтверждения — заказ
+    # не должен потеряться, даже если Telegram не ответит.
+    saved = user_id is not None and await save_customer_contact(user_id, email)
+    if saved:
+        text = f"Записал {email}. Продажники свяжутся с вами по почте."
+    else:
+        text = (
+            f"Связь с магазином не удалась, но я записал контакт: {email}. "
+            f"Продажники свяжутся с вами по почте."
+        )
+    await reply_text(message, text)
     return await send_cart(update, context)
 
 

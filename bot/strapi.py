@@ -51,6 +51,13 @@ class Cart:
         return sum(item.amount for item in self.items)
 
 
+@dataclass(frozen=True)
+class Customer:
+    document_id: str
+    telegram_user_id: str
+    email: str
+
+
 class StrapiClient:
     def __init__(
         self, base_url: str, token: str, *, timeout: float = TIMEOUT_SECONDS
@@ -185,6 +192,53 @@ class StrapiClient:
                 f"{response.text[:200]}"
             )
 
+    def get_customer(self, telegram_user_id: str) -> Customer | None:
+        payload = self._get_json(
+            "/api/customers",
+            {"filters[telegram_user_id][$eq]": telegram_user_id},
+        )
+        data = payload.get("data")
+        if not isinstance(data, list) or not data:
+            return None
+        entry = data[0]
+        if not isinstance(entry, dict):
+            return None
+        return _to_customer(entry)
+
+    def create_customer(self, telegram_user_id: str, email: str) -> Customer:
+        body = self._write_json(
+            "POST",
+            "/api/customers",
+            {"data": {"telegram_user_id": telegram_user_id, "email": email}},
+        )
+        entry = body.get("data")
+        if not isinstance(entry, dict):
+            raise StrapiError("Strapi создал клиента, но не вернул data")
+        return _to_customer(entry)
+
+    def update_customer(self, document_id: str, email: str) -> Customer:
+        body = self._write_json(
+            "PUT", f"/api/customers/{document_id}", {"data": {"email": email}}
+        )
+        entry = body.get("data")
+        if not isinstance(entry, dict):
+            raise StrapiError(f"Strapi обновил клиента {document_id}, но не вернул data")
+        return _to_customer(entry)
+
+    def save_customer(self, telegram_user_id: str, email: str) -> Customer:
+        """Клиент в CMS: создаёт нового, а у существующего меняет почту.
+
+        Покупатель может продиктовать почту заново — тогда терять старую
+        запись нельзя, а заводить вторую мешает `unique` по
+        `telegram_user_id`.
+        """
+        customer = self.get_customer(telegram_user_id)
+        if customer is None:
+            return self.create_customer(telegram_user_id, email)
+        if customer.email == email:
+            return customer
+        return self.update_customer(customer.document_id, email)
+
     def _write_json(self, method: str, path: str, payload: dict) -> dict:
         url = f"{self._base_url}{path}"
         try:
@@ -263,6 +317,14 @@ def _to_cart(entry: dict) -> Cart:
         document_id=entry.get("documentId", ""),
         telegram_user_id=entry.get("telegram_user_id", ""),
         items=items,
+    )
+
+
+def _to_customer(entry: dict) -> Customer:
+    return Customer(
+        document_id=entry.get("documentId", ""),
+        telegram_user_id=str(entry.get("telegram_user_id") or ""),
+        email=str(entry.get("email") or ""),
     )
 
 

@@ -84,44 +84,28 @@ class StrapiClient:
         return _to_product(item, self._base_url)
 
     def download_picture(self, url: str) -> bytes:
-        try:
-            response = self._session.get(
-                url, timeout=self._timeout, headers={"Accept": "*/*"}
-            )
-        except requests.RequestException as exc:
-            raise StrapiError(f"Не удалось скачать картинку {url}: {exc}") from exc
-
-        if response.status_code != 200:
-            raise StrapiError(f"Strapi ответил {response.status_code} на GET {url}")
+        response = self._request("GET", url, headers={"Accept": "*/*"})
         return response.content
 
     def create_cart(self, telegram_user_id: str) -> str:
-        url = f"{self._base_url}/api/carts"
-        try:
-            response = self._session.post(
-                url,
-                json={"data": {"telegram_user_id": telegram_user_id}},
-                timeout=self._timeout,
-            )
-        except requests.RequestException as exc:
-            raise StrapiError(
-                f"Не удалось создать корзину для {telegram_user_id}: {exc}"
-            ) from exc
-
-        if response.status_code in (200, 201):
-            document_id = (response.json().get("data") or {}).get("documentId")
-            if isinstance(document_id, str) and document_id:
-                return document_id
-            raise StrapiError("Strapi создал корзину, но не вернул documentId")
-
-        if response.status_code == 400 and "must be unique" in response.text.lower():
-            raise CartAlreadyExists(
-                f"Корзина для пользователя {telegram_user_id} уже существует"
-            )
-
-        raise StrapiError(
-            f"Strapi ответил {response.status_code} при создании корзины: {response.text[:200]}"
+        response = self._request(
+            "POST",
+            "/api/carts",
+            payload={"data": {"telegram_user_id": telegram_user_id}},
+            ok_statuses=(200, 201, 400),
         )
+        if response.status_code == 400:
+            if "must be unique" in response.text.lower():
+                raise CartAlreadyExists(
+                    f"Корзина для пользователя {telegram_user_id} уже существует"
+                )
+            raise StrapiError(
+                f"Strapi ответил 400 на POST /api/carts: {response.text[:200]}"
+            )
+        document_id = (response.json().get("data") or {}).get("documentId")
+        if isinstance(document_id, str) and document_id:
+            return document_id
+        raise StrapiError("Strapi создал корзину, но не вернул documentId")
 
     def get_cart(self, telegram_user_id: str) -> Cart | None:
         payload = self._get_json(
@@ -131,13 +115,8 @@ class StrapiClient:
                 "populate[items][populate][fish]": "true",
             },
         )
-        data = payload.get("data")
-        if not isinstance(data, list) or not data:
-            return None
-        entry = data[0]
-        if not isinstance(entry, dict):
-            return None
-        return _to_cart(entry)
+        entry = _first_entry(payload)
+        return _to_cart(entry) if entry is not None else None
 
     def add_item(
         self, telegram_user_id: str, fish_document_id: str, quantity_kg: float = 1.0
@@ -179,60 +158,31 @@ class StrapiClient:
         )
 
     def remove_item(self, cart_item_document_id: str) -> None:
-        url = f"{self._base_url}/api/cart-items/{cart_item_document_id}"
-        try:
-            response = self._session.delete(url, timeout=self._timeout)
-        except requests.RequestException as exc:
-            raise StrapiError(
-                f"Не удалось удалить позицию {cart_item_document_id}: {exc}"
-            ) from exc
-
-        if response.status_code not in (200, 204):
-            raise StrapiError(
-                f"Strapi ответил {response.status_code} при удалении позиции: "
-                f"{response.text[:200]}"
-            )
+        self._request(
+            "DELETE", f"/api/cart-items/{cart_item_document_id}", ok_statuses=(200, 204)
+        )
 
     def get_customer(self, telegram_user_id: str) -> Customer | None:
         payload = self._get_json(
             "/api/customers",
             {"filters[telegram_user_id][$eq]": telegram_user_id},
         )
-        data = payload.get("data")
-        if not isinstance(data, list) or not data:
-            return None
-        entry = data[0]
-        if not isinstance(entry, dict):
-            return None
-        return _to_customer(entry)
+        entry = _first_entry(payload)
+        return _to_customer(entry) if entry is not None else None
 
     def create_customer(self, telegram_user_id: str, email: str) -> Customer:
-        body = self._write_json(
+        return self._write_customer(
             "POST",
             "/api/customers",
             {"data": {"telegram_user_id": telegram_user_id, "email": email}},
         )
-        entry = body.get("data")
-        if not isinstance(entry, dict):
-            raise StrapiError("Strapi создал клиента, но не вернул data")
-        return _to_customer(entry)
 
     def update_customer(self, document_id: str, email: str) -> Customer:
-        body = self._write_json(
+        return self._write_customer(
             "PUT", f"/api/customers/{document_id}", {"data": {"email": email}}
         )
-        entry = body.get("data")
-        if not isinstance(entry, dict):
-            raise StrapiError(f"Strapi обновил клиента {document_id}, но не вернул data")
-        return _to_customer(entry)
 
     def save_customer(self, telegram_user_id: str, email: str) -> Customer:
-        """Клиент в CMS: создаёт нового, а у существующего меняет почту.
-
-        Покупатель может продиктовать почту заново — тогда терять старую
-        запись нельзя, а заводить вторую мешает `unique` по
-        `telegram_user_id`.
-        """
         customer = self.get_customer(telegram_user_id)
         if customer is None:
             return self.create_customer(telegram_user_id, email)
@@ -240,45 +190,64 @@ class StrapiClient:
             return customer
         return self.update_customer(customer.document_id, email)
 
+    def _write_customer(self, method: str, path: str, payload: dict) -> Customer:
+        body = self._write_json(method, path, payload)
+        entry = body.get("data")
+        if not isinstance(entry, dict):
+            raise StrapiError(f"Strapi не вернул data на {method} {path}")
+        return _to_customer(entry)
+
     def _write_json(self, method: str, path: str, payload: dict) -> dict:
-        url = f"{self._base_url}{path}"
+        body = self._request(method, path, payload=payload).json()
+        if not isinstance(body, dict):
+            raise StrapiError(f"Strapi вернул неожиданный ответ на {method} {path}")
+        return body
+
+    def _get_json(self, path: str, params: dict[str, str]) -> dict:
+        payload = self._request("GET", path, params=params).json()
+        if not isinstance(payload, dict):
+            raise StrapiError(f"Strapi вернул неожиданный ответ на GET {path}")
+        return payload
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, str] | None = None,
+        payload: dict | None = None,
+        headers: dict[str, str] | None = None,
+        ok_statuses: tuple[int, ...] = (200, 201),
+    ) -> requests.Response:
+        url = path if path.startswith("http") else f"{self._base_url}{path}"
         try:
             response = self._session.request(
-                method, url, json=payload, timeout=self._timeout
+                method,
+                url,
+                params=params,
+                json=payload,
+                headers=headers,
+                timeout=self._timeout,
             )
         except requests.RequestException as exc:
             raise StrapiError(
                 f"Не удалось обратиться к Strapi по {method} {url}: {exc}"
             ) from exc
 
-        if response.status_code not in (200, 201):
+        if response.status_code not in ok_statuses:
             raise StrapiError(
-                f"Strapi ответил {response.status_code} на {method} {url}: {response.text[:200]}"
+                f"Strapi ответил {response.status_code} на {method} {url}: "
+                f"{response.text[:200]}"
             )
+        return response
 
-        body = response.json()
-        if not isinstance(body, dict):
-            raise StrapiError(f"Strapi вернул неожиданный ответ на {method} {url}")
-        return body
 
-    def _get_json(self, path: str, params: dict[str, str]) -> dict:
-        url = f"{self._base_url}{path}"
-        try:
-            response = self._session.get(url, params=params, timeout=self._timeout)
-        except requests.RequestException as exc:
-            raise StrapiError(
-                f"Не удалось обратиться к Strapi по {url}: {exc}"
-            ) from exc
-
-        if response.status_code != 200:
-            raise StrapiError(
-                f"Strapi ответил {response.status_code} на GET {url}: {response.text[:200]}"
-            )
-
-        payload = response.json()
-        if not isinstance(payload, dict):
-            raise StrapiError(f"Strapi вернул неожиданный ответ на GET {url}")
-        return payload
+def _first_entry(payload: dict) -> dict | None:
+    data = payload.get("data")
+    if not isinstance(data, list) or not data:
+        return None
+    entry = data[0]
+    return entry if isinstance(entry, dict) else None
 
 
 def _to_product(item: dict, base_url: str) -> Product:

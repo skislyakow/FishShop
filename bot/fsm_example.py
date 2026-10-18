@@ -30,6 +30,7 @@ ECHO = "ECHO"
 HANDLE_MENU = "HANDLE_MENU"
 HANDLE_DESCRIPTION = "HANDLE_DESCRIPTION"
 BACK_TO_LIST = "back"
+ADD_TO_CART_PREFIX = "add:"
 STATE_KEY_PREFIX = "state:"
 CAPTION_LIMIT = 1024
 
@@ -62,9 +63,17 @@ def products_keyboard(products: list[Product]) -> InlineKeyboardMarkup:
     )
 
 
-def back_keyboard() -> InlineKeyboardMarkup:
+def product_keyboard(fish_document_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("← Назад", callback_data=BACK_TO_LIST)]]
+        [
+            [
+                InlineKeyboardButton(
+                    "Добавить в корзину",
+                    callback_data=f"{ADD_TO_CART_PREFIX}{fish_document_id}",
+                )
+            ],
+            [InlineKeyboardButton("← Назад", callback_data=BACK_TO_LIST)],
+        ]
     )
 
 
@@ -109,13 +118,13 @@ async def send_product_card(
                 chat_id=chat_id,
                 photo=io.BytesIO(picture),
                 caption=product_caption(card),
-                reply_markup=back_keyboard(),
+                reply_markup=product_keyboard(product.document_id),
             )
             return
         except BadRequest as exc:
             logger.error("Telegram не принял картинку товара %s: %s", product.title, exc)
     await context.bot.send_message(
-        chat_id=chat_id, text=card, reply_markup=back_keyboard()
+        chat_id=chat_id, text=card, reply_markup=product_keyboard(product.document_id)
     )
 
 
@@ -163,8 +172,43 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str
     return HANDLE_DESCRIPTION
 
 
+async def add_item_to_cart(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, fish_document_id: str
+) -> None:
+    query = update.callback_query
+    if query is not None:
+        await query.answer()
+
+    chat = update.effective_chat
+    user = update.effective_user
+    if chat is None or user is None:
+        return
+
+    try:
+        client = client_from_env()
+        await asyncio.to_thread(client.add_item, str(user.id), fish_document_id)
+    except StrapiError as exc:
+        logger.error("Не удалось добавить товар в корзину: %s", exc)
+        await context.bot.send_message(
+            chat_id=chat.id, text="Не удалось добавить товар в корзину, попробуйте позже."
+        )
+        return
+
+    await context.bot.send_message(chat_id=chat.id, text="Товар добавлен в корзину.")
+
+
 async def handle_description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
     query = update.callback_query
+    if (
+        query is not None
+        and query.data is not None
+        and query.data.startswith(ADD_TO_CART_PREFIX)
+    ):
+        await add_item_to_cart(
+            update, context, query.data[len(ADD_TO_CART_PREFIX) :]
+        )
+        return HANDLE_DESCRIPTION
+
     if query is not None:
         await query.answer()
     return await send_products(update)

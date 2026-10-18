@@ -13,6 +13,10 @@ class StrapiError(RuntimeError):
     pass
 
 
+class CartAlreadyExists(StrapiError):
+    pass
+
+
 @dataclass(frozen=True)
 class Product:
     id: int
@@ -58,6 +62,107 @@ class StrapiClient:
         if response.status_code != 200:
             raise StrapiError(f"Strapi ответил {response.status_code} на GET {url}")
         return response.content
+
+    def create_cart(self, telegram_user_id: str) -> str:
+        url = f"{self._base_url}/api/carts"
+        try:
+            response = self._session.post(
+                url,
+                json={"data": {"telegram_user_id": telegram_user_id}},
+                timeout=self._timeout,
+            )
+        except requests.RequestException as exc:
+            raise StrapiError(
+                f"Не удалось создать корзину для {telegram_user_id}: {exc}"
+            ) from exc
+
+        if response.status_code in (200, 201):
+            document_id = (response.json().get("data") or {}).get("documentId")
+            if isinstance(document_id, str) and document_id:
+                return document_id
+            raise StrapiError("Strapi создал корзину, но не вернул documentId")
+
+        if response.status_code == 400 and "must be unique" in response.text.lower():
+            raise CartAlreadyExists(
+                f"Корзина для пользователя {telegram_user_id} уже существует"
+            )
+
+        raise StrapiError(
+            f"Strapi ответил {response.status_code} при создании корзины: {response.text[:200]}"
+        )
+
+    def find_cart(self, telegram_user_id: str) -> dict | None:
+        payload = self._get_json(
+            "/api/carts",
+            {
+                "filters[telegram_user_id][$eq]": telegram_user_id,
+                "populate[items][populate][fish]": "true",
+            },
+        )
+        data = payload.get("data")
+        if isinstance(data, list):
+            for entry in data:
+                if isinstance(entry, dict):
+                    return entry
+        return None
+
+    def add_item(
+        self, telegram_user_id: str, fish_document_id: str, quantity_kg: float = 1.0
+    ) -> None:
+        cart = self.find_cart(telegram_user_id)
+        if cart is None:
+            try:
+                cart = {"documentId": self.create_cart(telegram_user_id), "items": []}
+            except CartAlreadyExists:
+                cart = self.find_cart(telegram_user_id)
+            if cart is None:
+                raise StrapiError(
+                    f"Корзину для пользователя {telegram_user_id} не удалось ни создать, ни найти"
+                )
+
+        for item in cart.get("items") or []:
+            fish = item.get("fish") or {}
+            if fish.get("documentId") == fish_document_id:
+                new_quantity = float(item.get("quantity_kg") or 0) + quantity_kg
+                self._write_json(
+                    "PUT",
+                    f"/api/cart-items/{item['documentId']}",
+                    {"data": {"quantity_kg": new_quantity}},
+                )
+                return
+
+        self._write_json(
+            "POST",
+            "/api/cart-items",
+            {
+                "data": {
+                    "cart": cart["documentId"],
+                    "fish": fish_document_id,
+                    "quantity_kg": quantity_kg,
+                }
+            },
+        )
+
+    def _write_json(self, method: str, path: str, payload: dict) -> dict:
+        url = f"{self._base_url}{path}"
+        try:
+            response = self._session.request(
+                method, url, json=payload, timeout=self._timeout
+            )
+        except requests.RequestException as exc:
+            raise StrapiError(
+                f"Не удалось обратиться к Strapi по {method} {url}: {exc}"
+            ) from exc
+
+        if response.status_code not in (200, 201):
+            raise StrapiError(
+                f"Strapi ответил {response.status_code} на {method} {url}: {response.text[:200]}"
+            )
+
+        body = response.json()
+        if not isinstance(body, dict):
+            raise StrapiError(f"Strapi вернул неожиданный ответ на {method} {url}")
+        return body
 
     def _get_json(self, path: str, params: dict[str, str]) -> dict:
         url = f"{self._base_url}{path}"

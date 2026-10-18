@@ -182,4 +182,4 @@ Strapi пишет прогресс в stderr, поэтому PowerShell може
 - [ ] skills восстановлены из `skills-lock.json` (`.agents/skills/` не пуст)
 - [ ] Redis отвечает: `wsl -e redis-cli ping` → `PONG`
 - [ ] `bot/.env` заполнен (`STRAPI_API_TOKEN` и `TELEGRAM_TOKEN`)
-- [ ] `cd bot && uv run python main.py` печатает каталог из Strapi
+- [ ] `cd bot && uv run python main.py` запускает бота (в Telegram приходит каталог по `/start`)

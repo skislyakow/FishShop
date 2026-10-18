@@ -1,26 +1,21 @@
 # FishShop: Telegram-бот
 
-Python-клиент FishShop: выгрузка каталога по REST API Strapi и Telegram-бот на стейт-машине.
+Python-клиент FishShop: Telegram-бот на стейт-машине, каталог и корзина по REST API Strapi.
 
-## Каталог по API
-
-```bash
-cd bot
-uv run python main.py      # печатает все товары из Strapi
-```
-
-## Эхобот на стейт-машине
+## Запуск
 
 ```bash
 cd bot
-uv run python fsm_example.py
+uv run python main.py
 ```
 
 `/start` → сообщение с кнопками, по одной на каждый товар каталога (названия берутся из Strapi по
 REST API), состояние переходит в `HANDLE_MENU`. Нажатие на товар присылает карточку — фото,
 название, цену и описание (`GET /api/fishes/:documentId`) — и переводит в `HANDLE_DESCRIPTION`;
 сообщение с меню бот при этом удаляет. Кнопка «← Назад» возвращает список и состояние
-`HANDLE_MENU`. Состояние `START` — только точка входа: его ставит команда `/start`.
+`HANDLE_MENU`. Дальше — корзина (`HANDLE_CART`): добавление из карточки, отказ от позиций,
+кнопка «Оплатить» переводит в `WAITING_EMAIL` и просит почту. Состояние `START` — только точка
+входа: его ставит команда `/start`.
 
 Картинку бот скачивает из Strapi сам и отправляет вложение файлом: ссылку на `localhost` Telegram
 бесполезно отдавать, он пошёл бы качать её со своих серверов. Формат Telegram определяет сам — и jpg,
@@ -52,7 +47,8 @@ wsl -e redis-cli get state:<chat_id>
    ```
 2. `STRAPI_URL` — адрес Strapi (по умолчанию `http://localhost:1337`).
 3. `STRAPI_API_TOKEN` — токен из админки Strapi: **Settings → API Tokens**
-   (тип **Read-only**, срок — Unlimited). Токен показывается один раз.
+   (тип **Full access**, срок — Unlimited). Токен показывается один раз: бот не только читает
+   каталог, но и пишет корзины и контакты.
 4. `TELEGRAM_TOKEN` — токен от @BotFather (`/newbot`), плюс `TELEGRAM_BOT_NAME` для справки.
 5. `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` — подключение к Redis
    (по умолчанию `127.0.0.1:6379` без пароля).
@@ -64,5 +60,4 @@ wsl -e redis-cli get state:<chat_id>
 | Файл | Роль |
 | --- | --- |
 | `strapi.py` | клиент REST API Strapi; знает про HTTP, URL и токен |
-| `main.py` | точка входа каталога: печатает товары в консоль |
-| `fsm_example.py` | бот на стейт-машине: кнопки с товарами, карточки с фото, состояния в Redis |
+| `main.py` | точка входа: бот на стейт-машине — каталог, карточки, корзина, почта |

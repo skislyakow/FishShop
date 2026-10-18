@@ -27,6 +27,30 @@ class Product:
     picture_url: str | None
 
 
+@dataclass(frozen=True)
+class CartItem:
+    document_id: str
+    fish_document_id: str
+    title: str
+    quantity_kg: float
+    price_per_kg: float
+
+    @property
+    def amount(self) -> float:
+        return self.quantity_kg * self.price_per_kg
+
+
+@dataclass(frozen=True)
+class Cart:
+    document_id: str
+    telegram_user_id: str
+    items: list[CartItem]
+
+    @property
+    def total(self) -> float:
+        return sum(item.amount for item in self.items)
+
+
 class StrapiClient:
     def __init__(
         self, base_url: str, token: str, *, timeout: float = TIMEOUT_SECONDS
@@ -91,7 +115,7 @@ class StrapiClient:
             f"Strapi ответил {response.status_code} при создании корзины: {response.text[:200]}"
         )
 
-    def find_cart(self, telegram_user_id: str) -> dict | None:
+    def get_cart(self, telegram_user_id: str) -> Cart | None:
         payload = self._get_json(
             "/api/carts",
             {
@@ -100,34 +124,37 @@ class StrapiClient:
             },
         )
         data = payload.get("data")
-        if isinstance(data, list):
-            for entry in data:
-                if isinstance(entry, dict):
-                    return entry
-        return None
+        if not isinstance(data, list) or not data:
+            return None
+        entry = data[0]
+        if not isinstance(entry, dict):
+            return None
+        return _to_cart(entry)
 
     def add_item(
         self, telegram_user_id: str, fish_document_id: str, quantity_kg: float = 1.0
     ) -> None:
-        cart = self.find_cart(telegram_user_id)
+        cart = self.get_cart(telegram_user_id)
         if cart is None:
             try:
-                cart = {"documentId": self.create_cart(telegram_user_id), "items": []}
+                cart = Cart(
+                    document_id=self.create_cart(telegram_user_id),
+                    telegram_user_id=telegram_user_id,
+                    items=[],
+                )
             except CartAlreadyExists:
-                cart = self.find_cart(telegram_user_id)
+                cart = self.get_cart(telegram_user_id)
             if cart is None:
                 raise StrapiError(
                     f"Корзину для пользователя {telegram_user_id} не удалось ни создать, ни найти"
                 )
 
-        for item in cart.get("items") or []:
-            fish = item.get("fish") or {}
-            if fish.get("documentId") == fish_document_id:
-                new_quantity = float(item.get("quantity_kg") or 0) + quantity_kg
+        for item in cart.items:
+            if item.fish_document_id == fish_document_id:
                 self._write_json(
                     "PUT",
-                    f"/api/cart-items/{item['documentId']}",
-                    {"data": {"quantity_kg": new_quantity}},
+                    f"/api/cart-items/{item.document_id}",
+                    {"data": {"quantity_kg": item.quantity_kg + quantity_kg}},
                 )
                 return
 
@@ -136,7 +163,7 @@ class StrapiClient:
             "/api/cart-items",
             {
                 "data": {
-                    "cart": cart["documentId"],
+                    "cart": cart.document_id,
                     "fish": fish_document_id,
                     "quantity_kg": quantity_kg,
                 }
@@ -197,6 +224,30 @@ def _to_product(item: dict, base_url: str) -> Product:
         description=item.get("description", ""),
         price=float(item.get("price") or 0),
         picture_url=picture_url,
+    )
+
+
+def _to_cart(entry: dict) -> Cart:
+    items: list[CartItem] = []
+    for raw in entry.get("items") or []:
+        if not isinstance(raw, dict):
+            continue
+        raw_fish = raw.get("fish")
+        fish: dict = raw_fish if isinstance(raw_fish, dict) else {}
+        items.append(
+            CartItem(
+                document_id=raw.get("documentId", ""),
+                fish_document_id=fish.get("documentId", ""),
+                title=fish.get("title", ""),
+                quantity_kg=float(raw.get("quantity_kg") or 0),
+                price_per_kg=float(fish.get("price") or 0),
+            )
+        )
+
+    return Cart(
+        document_id=entry.get("documentId", ""),
+        telegram_user_id=entry.get("telegram_user_id", ""),
+        items=items,
     )
 
 

@@ -21,7 +21,7 @@ from telegram.ext import (
     filters,
 )
 
-from strapi import Product, StrapiError, client_from_env
+from strapi import Cart, Product, StrapiError, client_from_env
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,9 @@ START = "START"
 ECHO = "ECHO"
 HANDLE_MENU = "HANDLE_MENU"
 HANDLE_DESCRIPTION = "HANDLE_DESCRIPTION"
+HANDLE_CART = "HANDLE_CART"
 BACK_TO_LIST = "back"
+SHOW_CART = "cart"
 ADD_TO_CART_PREFIX = "add:"
 STATE_KEY_PREFIX = "state:"
 CAPTION_LIMIT = 1024
@@ -60,6 +62,7 @@ def products_keyboard(products: list[Product]) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(product.title, callback_data=product.document_id)]
             for product in products
         ]
+        + [[cart_button()]]
     )
 
 
@@ -72,8 +75,19 @@ def product_keyboard(fish_document_id: str) -> InlineKeyboardMarkup:
                     callback_data=f"{ADD_TO_CART_PREFIX}{fish_document_id}",
                 )
             ],
+            [cart_button()],
             [InlineKeyboardButton("← Назад", callback_data=BACK_TO_LIST)],
         ]
+    )
+
+
+def cart_button() -> InlineKeyboardButton:
+    return InlineKeyboardButton("Моя корзина", callback_data=SHOW_CART)
+
+
+def back_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("← Назад", callback_data=BACK_TO_LIST)]]
     )
 
 
@@ -103,6 +117,39 @@ async def send_products(update: Update) -> str:
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
     return await send_products(update)
+
+
+def cart_text(cart: Cart | None) -> str:
+    if cart is None or not cart.items:
+        return "Корзина пуста."
+
+    lines = ["Моя корзина:", ""]
+    for item in cart.items:
+        lines.append(
+            f"• {item.title} — {item.quantity_kg:g} кг × {item.price_per_kg:g} ₽/кг "
+            f"= {item.amount:g} ₽"
+        )
+    lines.append("")
+    lines.append(f"Итого: {cart.total:g} ₽")
+    return "\n".join(lines)
+
+
+async def send_cart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
+    message = update.effective_message
+    user = update.effective_user
+    if message is None or user is None:
+        return START
+
+    try:
+        client = client_from_env()
+        cart = await asyncio.to_thread(client.get_cart, str(user.id))
+    except StrapiError as exc:
+        logger.error("Не удалось получить корзину: %s", exc)
+        await message.reply_text("Корзина недоступна, попробуйте позже.")
+        return HANDLE_MENU
+
+    await message.reply_text(cart_text(cart), reply_markup=back_keyboard())
+    return HANDLE_CART
 
 
 async def send_product_card(
@@ -145,6 +192,8 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str
     await query.answer()
     if query.data == BACK_TO_LIST:
         return await send_products(update)
+    if query.data == SHOW_CART:
+        return await send_cart(update, context)
     if chat is None:
         return HANDLE_MENU
 
@@ -209,9 +258,22 @@ async def handle_description(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return HANDLE_DESCRIPTION
 
+    if query is not None and query.data == SHOW_CART:
+        await query.answer()
+        return await send_cart(update, context)
+
     if query is not None:
         await query.answer()
     return await send_products(update)
+
+
+async def handle_cart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
+    query = update.callback_query
+    if query is not None:
+        await query.answer()
+        if query.data == BACK_TO_LIST:
+            return await send_products(update)
+    return await send_cart(update, context)
 
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
@@ -227,6 +289,7 @@ STATES_FUNCTIONS: dict[str, Handler] = {
     ECHO: echo,
     HANDLE_MENU: handle_menu,
     HANDLE_DESCRIPTION: handle_description,
+    HANDLE_CART: handle_cart,
 }
 
 

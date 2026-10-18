@@ -6,7 +6,8 @@ import logging
 import os
 import re
 import sys
-from typing import Awaitable, Callable
+from datetime import timedelta
+from typing import Any, Awaitable, Callable
 
 import redis
 from dotenv import load_dotenv
@@ -15,9 +16,16 @@ from telegram import (
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    Message,
     Update,
 )
-from telegram.error import BadRequest, InvalidToken, TelegramError
+from telegram.error import (
+    BadRequest,
+    InvalidToken,
+    NetworkError,
+    RetryAfter,
+    TelegramError,
+)
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -52,6 +60,14 @@ EMAIL_HINT = "Это не похоже на почту. Пример: denis@exam
 EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 STATE_KEY_PREFIX = "state:"
 CAPTION_LIMIT = 1024
+# Telegram API уходит через прокси, который иногда обрывается: пробуем отправить
+# ещё раз несколько раз, прежде чем сдаться.
+SEND_ATTEMPTS = 3
+SEND_DELAYS = (0.5, 2.0)
+# Дефолтные 5 секунд у PTB не хватает на handshake TLS через прокси — оттуда
+# сыпались ConnectTimeout во время тестов.
+CONNECT_TIMEOUT = 15.0
+READ_TIMEOUT = 15.0
 
 _database: redis.Redis | None = None
 
@@ -71,6 +87,72 @@ async def answer_query(query: CallbackQuery | None) -> None:
         await query.answer()
     except TelegramError as exc:
         logger.warning("Не удалось ответить на нажатие кнопки: %s", exc)
+
+
+async def _send(send: Callable[[], Awaitable[Any]]) -> bool:
+    """Отправляет сообщение в Telegram, повторяя сбой связи.
+
+    Возвращает `True`, если сообщение дошло. Таймауты и обрывы (`NetworkError`)
+    повторяются с паузой, `RetryAfter` — с паузой, которую просит Telegram.
+    Всё остальное (например `BadRequest` на непринятом сообщении) повторять
+    бессмысленно: одна строка warning — и `False`. Ошибка сюда не поднимается
+    наверх: хэндлер доходит до конца, а состояние диалога выбирает вызывающий
+    код по тому, дошло ли сообщение (см. `ask_email`).
+    """
+    attempt = 1
+    delay: float | timedelta = 0.0
+    while attempt <= SEND_ATTEMPTS:
+        if delay:
+            seconds = delay.total_seconds() if isinstance(delay, timedelta) else delay
+            await asyncio.sleep(seconds)
+        try:
+            await send()
+            return True
+        except BadRequest as exc:
+            logger.warning("Telegram отклонил сообщение: %s", exc)
+            return False
+        except RetryAfter as exc:
+            logger.warning(
+                "Telegram ограничил частоту, жду %s с (попытка %d/%d)",
+                exc.retry_after,
+                attempt,
+                SEND_ATTEMPTS,
+            )
+            delay = exc.retry_after
+        except NetworkError as exc:
+            logger.warning(
+                "Сбой связи с Telegram, попытка %d/%d: %s",
+                attempt,
+                SEND_ATTEMPTS,
+                exc,
+            )
+            delay = SEND_DELAYS[min(attempt - 1, len(SEND_DELAYS) - 1)]
+        except TelegramError as exc:
+            logger.warning("Telegram отклонил сообщение: %s", exc)
+            return False
+        attempt += 1
+    logger.warning("Не удалось отправить сообщение за %d попытки", SEND_ATTEMPTS)
+    return False
+
+
+async def reply_text(message: Message, text: str, **kwargs: Any) -> bool:
+    return await _send(lambda: message.reply_text(text, **kwargs))
+
+
+async def send_message(
+    context: ContextTypes.DEFAULT_TYPE, chat_id: int, text: str, **kwargs: Any
+) -> bool:
+    return await _send(
+        lambda: context.bot.send_message(chat_id=chat_id, text=text, **kwargs)
+    )
+
+
+async def send_photo(
+    context: ContextTypes.DEFAULT_TYPE, chat_id: int, photo: Any, **kwargs: Any
+) -> bool:
+    return await _send(
+        lambda: context.bot.send_photo(chat_id=chat_id, photo=photo, **kwargs)
+    )
 
 
 async def fetch_products() -> list[Product]:
@@ -157,9 +239,9 @@ async def send_products(update: Update) -> str:
         products = await fetch_products()
     except StrapiError as exc:
         logger.error("Не удалось получить каталог: %s", exc)
-        await message.reply_text("Каталог недоступен, попробуйте позже.")
+        await reply_text(message, "Каталог недоступен, попробуйте позже.")
         return START
-    await message.reply_text("Выберите рыбу:", reply_markup=products_keyboard(products))
+    await reply_text(message, "Выберите рыбу:", reply_markup=products_keyboard(products))
     return HANDLE_MENU
 
 
@@ -193,10 +275,10 @@ async def send_cart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
         cart = await asyncio.to_thread(client.get_cart, str(user.id))
     except StrapiError as exc:
         logger.error("Не удалось получить корзину: %s", exc)
-        await message.reply_text("Корзина недоступна, попробуйте позже.")
+        await reply_text(message, "Корзина недоступна, попробуйте позже.")
         return HANDLE_MENU
 
-    await message.reply_text(cart_text(cart), reply_markup=cart_keyboard(cart))
+    await reply_text(message, cart_text(cart), reply_markup=cart_keyboard(cart))
     return HANDLE_CART
 
 
@@ -208,18 +290,19 @@ async def send_product_card(
 ) -> None:
     card = product_card(product)
     if picture is not None:
-        try:
-            await context.bot.send_photo(
-                chat_id=chat_id,
-                photo=io.BytesIO(picture),
-                caption=product_caption(card),
-                reply_markup=product_keyboard(product.document_id),
-            )
+        photo_sent = await send_photo(
+            context,
+            chat_id,
+            io.BytesIO(picture),
+            caption=product_caption(card),
+            reply_markup=product_keyboard(product.document_id),
+        )
+        if photo_sent:
             return
-        except BadRequest as exc:
-            logger.error("Telegram не принял картинку товара %s: %s", product.title, exc)
-    await context.bot.send_message(
-        chat_id=chat_id, text=card, reply_markup=product_keyboard(product.document_id)
+        # Картинка не ушла — карточка должна прийти хотя бы текстом.
+        logger.info("Картинка товара %s не ушла, отправляю карточку текстом", product.title)
+    await send_message(
+        context, chat_id, card, reply_markup=product_keyboard(product.document_id)
     )
 
 
@@ -249,9 +332,7 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str
         product = await fetch_product(query.data)
     except StrapiError as exc:
         logger.error("Не удалось получить товар %s: %s", query.data, exc)
-        await context.bot.send_message(
-            chat_id=chat.id, text="Товар недоступен, попробуйте позже."
-        )
+        await send_message(context, chat.id, "Товар недоступен, попробуйте позже.")
         return HANDLE_MENU
 
     picture: bytes | None = None
@@ -279,7 +360,7 @@ async def remove_cart_item(
         logger.error("Не удалось убрать товар из корзины: %s", exc)
         message = update.effective_message
         if message is not None:
-            await message.reply_text("Не удалось убрать товар, попробуйте позже.")
+            await reply_text(message, "Не удалось убрать товар, попробуйте позже.")
 
 
 async def add_item_to_cart(
@@ -298,12 +379,12 @@ async def add_item_to_cart(
         await asyncio.to_thread(client.add_item, str(user.id), fish_document_id)
     except StrapiError as exc:
         logger.error("Не удалось добавить товар в корзину: %s", exc)
-        await context.bot.send_message(
-            chat_id=chat.id, text="Не удалось добавить товар в корзину, попробуйте позже."
+        await send_message(
+            context, chat.id, "Не удалось добавить товар в корзину, попробуйте позже."
         )
         return
 
-    await context.bot.send_message(chat_id=chat.id, text="Товар добавлен в корзину.")
+    await send_message(context, chat.id, "Товар добавлен в корзину.")
 
 
 async def handle_description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
@@ -349,8 +430,12 @@ async def handle_cart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str
 async def ask_email(update: Update) -> str:
     """Просит почту заказчика и уводит диалог в ожидание текстового ввода."""
     message = update.effective_message
-    if message is not None:
-        await message.reply_text(EMAIL_PROMPT)
+    if message is None:
+        return HANDLE_CART
+    if not await reply_text(message, EMAIL_PROMPT):
+        # Вопрос до пользователя не дошёл — остаёмся в корзине, где у него
+        # целая кнопка «Оплатить», чтобы попробовать ещё раз.
+        return HANDLE_CART
     return WAITING_EMAIL
 
 
@@ -371,7 +456,7 @@ async def handle_waiting_email(update: Update, context: ContextTypes.DEFAULT_TYP
 
     match = EMAIL_PATTERN.search(message.text)
     if match is None:
-        await message.reply_text(EMAIL_HINT)
+        await reply_text(message, EMAIL_HINT)
         return WAITING_EMAIL
 
     email = match.group(0)
@@ -380,7 +465,9 @@ async def handle_waiting_email(update: Update, context: ContextTypes.DEFAULT_TYP
         email,
         user.id if user is not None else None,
     )
-    await message.reply_text(f"Записал {email}. Продажники свяжутся с вами по почте.")
+    # Письмо продажникам уже записано в лог — даже если подтверждение не уйдёт,
+    # заказ не потерян.
+    await reply_text(message, f"Записал {email}. Продажники свяжутся с вами по почте.")
     return await send_cart(update, context)
 
 
@@ -388,7 +475,7 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
     message = update.effective_message
     if message is None or message.text is None:
         return ECHO
-    await message.reply_text(message.text)
+    await reply_text(message, message.text)
     return ECHO
 
 
@@ -428,6 +515,12 @@ async def handle_users_reply(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     try:
         next_state = await state_handler(update, context)
+    except TelegramError as exc:
+        # Сбой Telegram API не должен заливать консоль traceback'ом. Состояние
+        # не меняем: пользователь просто повторит действие, когда связь
+        # вернётся.
+        logger.warning("Сбой Telegram в состоянии %s: %s", user_state, exc)
+        return
     except Exception:
         logger.exception("Ошибка в хэндлере состояния %s", user_state)
         return
@@ -495,7 +588,13 @@ def main() -> int:
         )
         return 1
 
-    application = Application.builder().token(token).build()
+    application = (
+        Application.builder()
+        .token(token)
+        .connect_timeout(CONNECT_TIMEOUT)
+        .read_timeout(READ_TIMEOUT)
+        .build()
+    )
 
     application.add_handler(CallbackQueryHandler(handle_users_reply))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_users_reply))

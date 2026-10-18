@@ -170,6 +170,21 @@ class StrapiClient:
             },
         )
 
+    def remove_item(self, cart_item_document_id: str) -> None:
+        url = f"{self._base_url}/api/cart-items/{cart_item_document_id}"
+        try:
+            response = self._session.delete(url, timeout=self._timeout)
+        except requests.RequestException as exc:
+            raise StrapiError(
+                f"Не удалось удалить позицию {cart_item_document_id}: {exc}"
+            ) from exc
+
+        if response.status_code not in (200, 204):
+            raise StrapiError(
+                f"Strapi ответил {response.status_code} при удалении позиции: "
+                f"{response.text[:200]}"
+            )
+
     def _write_json(self, method: str, path: str, payload: dict) -> dict:
         url = f"{self._base_url}{path}"
         try:

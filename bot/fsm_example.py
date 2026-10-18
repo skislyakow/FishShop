@@ -33,6 +33,8 @@ HANDLE_CART = "HANDLE_CART"
 BACK_TO_LIST = "back"
 SHOW_CART = "cart"
 ADD_TO_CART_PREFIX = "add:"
+REMOVE_ITEM_PREFIX = "del:"
+MENU_LABEL = "В меню"
 STATE_KEY_PREFIX = "state:"
 CAPTION_LIMIT = 1024
 
@@ -85,10 +87,23 @@ def cart_button() -> InlineKeyboardButton:
     return InlineKeyboardButton("Моя корзина", callback_data=SHOW_CART)
 
 
-def back_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("← Назад", callback_data=BACK_TO_LIST)]]
-    )
+def cart_keyboard(cart: Cart | None) -> InlineKeyboardMarkup:
+    rows = [
+        [
+            InlineKeyboardButton(
+                f"Отказаться: {button_label(item.title)}",
+                callback_data=f"{REMOVE_ITEM_PREFIX}{item.document_id}",
+            )
+        ]
+        for item in (cart.items if cart is not None else [])
+    ]
+    rows.append([InlineKeyboardButton(MENU_LABEL, callback_data=BACK_TO_LIST)])
+    return InlineKeyboardMarkup(rows)
+
+
+def button_label(title: str, limit: int = 40) -> str:
+    # У Telegram текст кнопки ограничен 64 знаками — не рискуем длинными названиями.
+    return title if len(title) <= limit else title[: limit - 1] + "…"
 
 
 def product_card(product: Product) -> str:
@@ -148,7 +163,7 @@ async def send_cart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
         await message.reply_text("Корзина недоступна, попробуйте позже.")
         return HANDLE_MENU
 
-    await message.reply_text(cart_text(cart), reply_markup=back_keyboard())
+    await message.reply_text(cart_text(cart), reply_markup=cart_keyboard(cart))
     return HANDLE_CART
 
 
@@ -221,6 +236,19 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str
     return HANDLE_DESCRIPTION
 
 
+async def remove_cart_item(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, cart_item_document_id: str
+) -> None:
+    try:
+        client = client_from_env()
+        await asyncio.to_thread(client.remove_item, cart_item_document_id)
+    except StrapiError as exc:
+        logger.error("Не удалось убрать товар из корзины: %s", exc)
+        message = update.effective_message
+        if message is not None:
+            await message.reply_text("Не удалось убрать товар, попробуйте позже.")
+
+
 async def add_item_to_cart(
     update: Update, context: ContextTypes.DEFAULT_TYPE, fish_document_id: str
 ) -> None:
@@ -269,10 +297,18 @@ async def handle_description(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def handle_cart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
     query = update.callback_query
-    if query is not None:
-        await query.answer()
-        if query.data == BACK_TO_LIST:
-            return await send_products(update)
+    data = query.data if query is not None else None
+    if query is None or data is None:
+        return await send_cart(update, context)
+
+    await query.answer()
+
+    if data.startswith(REMOVE_ITEM_PREFIX):
+        await remove_cart_item(update, context, data[len(REMOVE_ITEM_PREFIX) :])
+        return await send_cart(update, context)
+
+    if data == BACK_TO_LIST:
+        return await send_products(update)
     return await send_cart(update, context)
 
 

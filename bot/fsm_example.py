@@ -4,6 +4,7 @@ import asyncio
 import io
 import logging
 import os
+import re
 import sys
 from typing import Awaitable, Callable
 
@@ -35,11 +36,20 @@ ECHO = "ECHO"
 HANDLE_MENU = "HANDLE_MENU"
 HANDLE_DESCRIPTION = "HANDLE_DESCRIPTION"
 HANDLE_CART = "HANDLE_CART"
+WAITING_EMAIL = "WAITING_EMAIL"
 BACK_TO_LIST = "back"
 SHOW_CART = "cart"
+PAY = "pay"
 ADD_TO_CART_PREFIX = "add:"
 REMOVE_ITEM_PREFIX = "del:"
 MENU_LABEL = "В меню"
+PAY_LABEL = "Оплатить"
+EMAIL_PROMPT = (
+    "Осталась самая важная часть — как с вами связаться.\n"
+    "Напишите, пожалуйста, вашу почту (email):"
+)
+EMAIL_HINT = "Это не похоже на почту. Пример: denis@example.com"
+EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 STATE_KEY_PREFIX = "state:"
 CAPTION_LIMIT = 1024
 
@@ -117,6 +127,9 @@ def cart_keyboard(cart: Cart | None) -> InlineKeyboardMarkup:
         ]
         for item in (cart.items if cart is not None else [])
     ]
+    if cart is not None and cart.items:
+        # Оплачивать нечего — кнопки «Оплатить» в пустой корзине не показываем.
+        rows.append([InlineKeyboardButton(PAY_LABEL, callback_data=PAY)])
     rows.append([InlineKeyboardButton(MENU_LABEL, callback_data=BACK_TO_LIST)])
     return InlineKeyboardMarkup(rows)
 
@@ -325,8 +338,49 @@ async def handle_cart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str
         await remove_cart_item(update, context, data[len(REMOVE_ITEM_PREFIX) :])
         return await send_cart(update, context)
 
+    if data == PAY:
+        return await ask_email(update)
+
     if data == BACK_TO_LIST:
         return await send_products(update)
+    return await send_cart(update, context)
+
+
+async def ask_email(update: Update) -> str:
+    """Просит почту заказчика и уводит диалог в ожидание текстового ввода."""
+    message = update.effective_message
+    if message is not None:
+        await message.reply_text(EMAIL_PROMPT)
+    return WAITING_EMAIL
+
+
+async def handle_waiting_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
+    query = update.callback_query
+    if query is not None:
+        # Пока ждём почту, нажатие на старые кнопки не должно ломать диалог:
+        # «Моя корзина» возвращает в корзину, всё остальное — в каталог.
+        await answer_query(query)
+        if query.data == SHOW_CART:
+            return await send_cart(update, context)
+        return await send_products(update)
+
+    message = update.effective_message
+    user = update.effective_user
+    if message is None or message.text is None:
+        return WAITING_EMAIL
+
+    match = EMAIL_PATTERN.search(message.text)
+    if match is None:
+        await message.reply_text(EMAIL_HINT)
+        return WAITING_EMAIL
+
+    email = match.group(0)
+    logger.info(
+        "Почта заказчика: %s (telegram_user_id=%s)",
+        email,
+        user.id if user is not None else None,
+    )
+    await message.reply_text(f"Записал {email}. Продажники свяжутся с вами по почте.")
     return await send_cart(update, context)
 
 
@@ -344,6 +398,7 @@ STATES_FUNCTIONS: dict[str, Handler] = {
     HANDLE_MENU: handle_menu,
     HANDLE_DESCRIPTION: handle_description,
     HANDLE_CART: handle_cart,
+    WAITING_EMAIL: handle_waiting_email,
 }
 
 

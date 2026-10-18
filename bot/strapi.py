@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from dataclasses import dataclass
 
@@ -336,3 +337,18 @@ def client_from_env() -> StrapiClient:
             "(в админке Strapi: Settings → API Tokens)."
         )
     return StrapiClient(os.environ.get("STRAPI_URL", DEFAULT_BASE_URL), token)
+
+
+async def fetch_products() -> list[Product]:
+    client = client_from_env()
+    return await asyncio.to_thread(client.list_fishes)
+
+
+async def fetch_product(document_id: str) -> Product:
+    client = client_from_env()
+    return await asyncio.to_thread(client.get_fish, document_id)
+
+
+async def fetch_picture(url: str) -> bytes:
+    client = client_from_env()
+    return await asyncio.to_thread(client.download_picture, url)

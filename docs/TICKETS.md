@@ -76,7 +76,7 @@
   отказа от позиций (`remove_item`, `DELETE /api/cart-items/<id>`) и выход «В меню». Кнопка
   «Оплатить» (только в непустой корзине) просит почту и уводит в состояние `WAITING_EMAIL`:
   адрес ищется регэкспом и логируется вместе с `telegram_user_id`, мусор — подсказка и то же
-  состояние. Content-type `Customer` создан (`telegram_user_id` unique + `email`, D&P
+  состояние, а после подтверждения диалог возвращается в каталог. Content-type `Customer` создан (`telegram_user_id` unique + `email`, D&P
   выключен), контакт уходит туда через `save_customer` (создать или обновить почту).
   Осталось: ввод имени и телефона, content-types `Order`, `OrderItem`.
 

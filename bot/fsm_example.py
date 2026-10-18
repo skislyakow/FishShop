@@ -10,7 +10,12 @@ from typing import Awaitable, Callable
 import redis
 from dotenv import load_dotenv
 from redis.exceptions import RedisError
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Update,
+)
 from telegram.error import BadRequest, InvalidToken, TelegramError
 from telegram.ext import (
     Application,
@@ -41,6 +46,21 @@ CAPTION_LIMIT = 1024
 _database: redis.Redis | None = None
 
 Handler = Callable[[Update, ContextTypes.DEFAULT_TYPE], Awaitable[str]]
+
+
+async def answer_query(query: CallbackQuery | None) -> None:
+    """Снимает «часики» под нажатой кнопкой.
+
+    Это косметика, поэтому сбой Telegram API (таймаут через прокси, устаревший запрос)
+    гасится здесь же: иначе разрыв связи оборвал бы весь хэндлер вместе с реальным
+    действием — добавлением или удалением позиции.
+    """
+    if query is None:
+        return
+    try:
+        await query.answer()
+    except TelegramError as exc:
+        logger.warning("Не удалось ответить на нажатие кнопки: %s", exc)
 
 
 async def fetch_products() -> list[Product]:
@@ -204,7 +224,7 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str
     chat = update.effective_chat
     if query is None or query.data is None:
         return await send_products(update)
-    await query.answer()
+    await answer_query(query)
     if query.data == BACK_TO_LIST:
         return await send_products(update)
     if query.data == SHOW_CART:
@@ -253,8 +273,7 @@ async def add_item_to_cart(
     update: Update, context: ContextTypes.DEFAULT_TYPE, fish_document_id: str
 ) -> None:
     query = update.callback_query
-    if query is not None:
-        await query.answer()
+    await answer_query(query)
 
     chat = update.effective_chat
     user = update.effective_user
@@ -287,11 +306,10 @@ async def handle_description(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return HANDLE_DESCRIPTION
 
     if query is not None and query.data == SHOW_CART:
-        await query.answer()
+        await answer_query(query)
         return await send_cart(update, context)
 
-    if query is not None:
-        await query.answer()
+    await answer_query(query)
     return await send_products(update)
 
 
@@ -301,7 +319,7 @@ async def handle_cart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str
     if query is None or data is None:
         return await send_cart(update, context)
 
-    await query.answer()
+    await answer_query(query)
 
     if data.startswith(REMOVE_ITEM_PREFIX):
         await remove_cart_item(update, context, data[len(REMOVE_ITEM_PREFIX) :])

@@ -56,7 +56,7 @@
 | Товар | `api::fish.fish` | `title` (string, required), `description` (text), `price` (decimal, required), `picture` (media, single); `draftAndPublish: true` |
 | Корзина | `api::cart.cart` | `telegram_user_id` (string, required, unique), relation `items` (oneToMany); `draftAndPublish: false` |
 | Позиция корзины | `api::cart-item.cart-item` | relation `cart` (manyToOne), relation `fish` (manyToOne), `quantity_kg` (float, required, default 1); `draftAndPublish: false` |
-| Покупатель | `api::customer.customer` | `telegramUserId`, `name`, `phone` |
+| Покупатель | `api::customer.customer` | `telegram_user_id` (string, required, unique), `email` (email, required); `draftAndPublish: false`; позже `name`, `phone` |
 | Заказ | `api::order.order` | `status` (enum), relation `customer` (manyToOne), relation `items` (oneToMany), relation `telegramMessageId`, `comment`, `total` |
 | Позиция заказа | `api::order-item.order-item` | relation `fish` (manyToOne), `quantityKg`, `pricePerKg` (снимок цены), `amount` |
 
@@ -94,6 +94,13 @@
   подтверждается пользователю, после чего диалог возвращается в корзину. Мимо почты — подсказка
   и то же состояние; нажатие любой старой кнопки во время ожидания уводит в корзину или каталог,
   чтобы диалог не зависал.
+- Контакт покупателя уходит в CMS: `save_customer()` — сначала `GET /api/customers` с фильтром
+  по `telegram_user_id`, затем `POST /api/customers` для нового клиента или
+  `PUT /api/customers/<id>`, если почту продиктовали заново: терять прежнюю запись нельзя, а
+  второй клиент с тем же `telegram_user_id` упирается в `unique`. Успех виден в логе строкой
+  «Клиент сохранён в CMS: documentId=…», а проверить себя можно запросом
+  `GET /api/customers/<documentId>` — контакты в ответе API. Если Strapi недоступен, бот пишет
+  об этом в лог и честно сообщает пользователю, что контакт остался в консоли.
 - Ответ на нажатие кнопки даёт `answer_query()`: обёртка над `callback_query.answer()`, которая
   снимает «часики» и гасит `TelegramError` (таймаут через прокси, устаревший запрос) с
   предупреждением в логе. Ответ на кнопку — косметика, поэтому его сбой не должен обрывать

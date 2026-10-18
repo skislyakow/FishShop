@@ -43,6 +43,8 @@
 - Strapi — единственный источник правды по каталогу, покупателям и заказам.
 - Бот не хранит бизнес-данные: состояние диалога (в каком состоянии пользователь) живёт в Redis
   (`state:<chat_id>`) и не является данными магазина — поэтому не попадает ни в Strapi, ни в git.
+- Корзина — наоборот, данные магазина: она живёт в Strapi (`Cart`/`CartItem`) и привязана к
+  `telegram_user_id` (ADR-0008). В Redis остаётся только «на каком экране покупатель».
 - Цена и состав заказа фиксируются в Strapi в момент оформления (см. «Позиция заказа» в
   `GLOSSARY.md`), чтобы прайс не переписывал прошлые заказы.
 
@@ -52,6 +54,8 @@
 | --- | --- | --- |
 | Раздел | `api::category.category` | `name`, `slug`, `sortOrder`, relation `fish` (oneToMany) |
 | Товар | `api::fish.fish` | `title` (string, required), `description` (text), `price` (decimal, required), `picture` (media, single); `draftAndPublish: true` |
+| Корзина | `api::cart.cart` | `telegram_user_id` (string, required, unique), relation `items` (oneToMany); `draftAndPublish: false` |
+| Позиция корзины | `api::cart-item.cart-item` | relation `cart` (manyToOne), relation `fish` (manyToOne), `quantity_kg` (float, required, default 1); `draftAndPublish: false` |
 | Покупатель | `api::customer.customer` | `telegramUserId`, `name`, `phone` |
 | Заказ | `api::order.order` | `status` (enum), relation `customer` (manyToOne), relation `items` (oneToMany), relation `telegramMessageId`, `comment`, `total` |
 | Позиция заказа | `api::order-item.order-item` | relation `fish` (manyToOne), `quantityKg`, `pricePerKg` (снимок цены), `amount` |
@@ -62,6 +66,9 @@
 - Авторизация: **API-токен** Strapi в заголовке `Authorization: Bearer <token>`.
 - Токены: `bot-read` (Read-only, создан; им ходит `bot/`) и позже `orders` (создание заказов).
 - `draftAndPublish` включён для товаров: бот видит только опубликованные записи.
+- У `Cart`/`CartItem` `draftAndPublish` выключен: это рабочие данные покупателя, а не контент
+  для редактора. С включённым D&P записи создаются черновиками и по API не видны, а `unique`
+  проверяется только при публикации.
 - Каждой машине нужен свой токен — они не переносятся между инстансами; создаётся заново
   в админке: Settings → API Tokens.
 - Клиент каталога — `bot/strapi.py`: `list_fishes()` возвращает `Product`, остальной код не
@@ -77,7 +84,6 @@
 ## Открытые вопросы
 
 - Единый ли API-токен для каталога и заказов или два.
-- Формат корзины в боте: интерактивная сессия или черновик заказа в Strapi.
 
 ## Принятые решения
 
@@ -88,3 +94,4 @@
 - ADR-0005: Strapi-проект на JavaScript.
 - ADR-0006: кроссплатформенный бутстрап окружения на Node-скрипте.
 - ADR-0007: python-telegram-bot 22 и состояния диалога в Redis.
+- ADR-0008: корзина хранится в Strapi и привязана к `telegram_user_id`.

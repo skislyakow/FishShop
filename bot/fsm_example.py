@@ -494,7 +494,9 @@ async def handle_waiting_email(update: Update, context: ContextTypes.DEFAULT_TYP
             f"Продажники свяжутся с вами по почте."
         )
     await reply_text(message, text)
-    return await send_cart(update, context)
+    # Подтверждение почты — конец оформления, дальше покупателю снова
+    # интересен каталог, а не его же корзина.
+    return await send_products(update)
 
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:

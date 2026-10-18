@@ -43,7 +43,7 @@ API. Бот — тонкий клиент этого API на Python; состо
 | Путь | Назначение |
 | --- | --- |
 | `cms/` | Strapi-проект: content-types `Fish`, `Cart`, `CartItem`, `Customer`, админка и REST API |
-| `bot/` | Telegram-бот: `main.py` (стейт-машина диалога) и `strapi.py` (REST-клиент) |
+| `bot/` | Telegram-бот (Python): каталог, карточки, корзина, сбор почты покупателя |
 | `docs/` | архитектура, настройка окружения, рабочие заметки |
 | `docs/adr/` | принятые архитектурные решения |
 | `scripts/`, `package.json` | кроссплатформенный бутстрап окружения (`npm run setup`) |

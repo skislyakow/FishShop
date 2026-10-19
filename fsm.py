@@ -38,7 +38,9 @@ STATES_FUNCTIONS: dict[str, Handler] = {
 }
 
 
-async def handle_users_reply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def handle_users_reply(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     db = redis_from_context(context)
 
     if update.callback_query is not None:
@@ -58,7 +60,9 @@ async def handle_users_reply(update: Update, context: ContextTypes.DEFAULT_TYPE)
     state_handler = STATES_FUNCTIONS.get(user_state)
     if state_handler is None:
         logger.warning(
-            "Неизвестное состояние %r для chat_id=%s — начинаю заново", user_state, chat_id
+            "Неизвестное состояние %r для chat_id=%s — начинаю заново",
+            user_state,
+            chat_id,
         )
         state_handler = start
 

@@ -97,10 +97,14 @@ async def send_product_card(
         if photo_sent:
             return
         logger.info(
-            "Картинка товара %s не ушла, отправляю карточку текстом", product.title
+            "Картинка товара %s не ушла, отправляю карточку текстом",
+            product.title,
         )
     await send_message(
-        context, chat_id, card, reply_markup=product_keyboard(product.document_id)
+        context,
+        chat_id,
+        card,
+        reply_markup=product_keyboard(product.document_id),
     )
 
 

@@ -37,7 +37,9 @@ from strapi import (
 logger = logging.getLogger(__name__)
 
 
-def strapi_api(context: ContextTypes.DEFAULT_TYPE) -> tuple[requests.Session, str]:
+def strapi_api(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> tuple[requests.Session, str]:
     session = cast(requests.Session, context.bot_data[STRAPI_SESSION_KEY])
     base_url = cast(str, context.bot_data[STRAPI_URL_KEY])
     return session, base_url
@@ -143,7 +145,9 @@ async def add_item_to_cart(
     except requests.RequestException as exc:
         logger.error("Не удалось добавить товар в корзину: %s", exc)
         await send_message(
-            context, chat.id, "Не удалось добавить товар в корзину, попробуйте позже."
+            context,
+            chat.id,
+            "Не удалось добавить товар в корзину, попробуйте позже.",
         )
         return
 
@@ -151,7 +155,9 @@ async def add_item_to_cart(
 
 
 async def remove_cart_item(
-    update: Update, context: ContextTypes.DEFAULT_TYPE, cart_item_document_id: str
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    cart_item_document_id: str,
 ) -> None:
     try:
         session, base_url = strapi_api(context)
@@ -220,7 +226,9 @@ async def save_customer_contact(
         )
     except requests.RequestException as exc:
         logger.error(
-            "Не удалось сохранить клиента %s в Strapi: %s", telegram_user_id, exc
+            "Не удалось сохранить клиента %s в Strapi: %s",
+            telegram_user_id,
+            exc,
         )
         return False
     logger.info(

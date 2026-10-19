@@ -47,9 +47,7 @@ def main() -> int:
         logger.error("TELEGRAM_TOKEN не задан. Добавь его в .env (см. .env.example)")
         return 1
     if not settings.strapi_api_token:
-        logger.error(
-            "STRAPI_API_TOKEN не задан. Добавь его в .env (см. .env.example)"
-        )
+        logger.error("STRAPI_API_TOKEN не задан. Добавь его в .env (см. .env.example)")
         return 1
 
     db = create_database_connection(
@@ -80,7 +78,9 @@ def main() -> int:
     application.bot_data[STRAPI_URL_KEY] = settings.strapi_url
 
     application.add_handler(CallbackQueryHandler(handle_users_reply))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_users_reply))
+    application.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_users_reply)
+    )
     application.add_handler(CommandHandler("start", handle_users_reply))
 
     logger.info("Бот запущен. Напиши ему /start в Telegram.")

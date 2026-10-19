@@ -14,3 +14,17 @@ dependencies = [
 # Не пакет, а приложение: uv не собирает wheel, просто ставит зависимости в .venv.
 [tool.uv]
 package = false
+
+[tool.mypy]
+python_version = "3.11"
+# IDE-расширение mypy запускается в своём окружении и не видит .venv проекта,
+# из-за чего падает на импорте redis. Настоящая проверка идёт через
+# `uv run --with mypy mypy .`, где зависимость есть.
+[[tool.mypy.overrides]]
+module = "redis.*"
+ignore_missing_imports = true
+
+# Ширина 88 — дефолт ruff. Фиксируем явно, чтобы автоформат IDE
+# не расходился с `uv run ruff format`.
+[tool.ruff]
+line-length = 88

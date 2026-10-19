@@ -63,7 +63,10 @@ def list_fishes(session: requests.Session, base_url: str) -> list[Product]:
 
 def get_fish(session: requests.Session, base_url: str, document_id: str) -> Product:
     payload = _get_parsed(
-        session, base_url, f"/api/fishes/{document_id}", {"populate": "picture"}
+        session,
+        base_url,
+        f"/api/fishes/{document_id}",
+        {"populate": "picture"},
     )
     item = payload.get("data")
     if not isinstance(item, dict):
@@ -229,7 +232,11 @@ def save_customer(
 
 
 def _write_customer(
-    session: requests.Session, base_url: str, method: str, path: str, payload: dict
+    session: requests.Session,
+    base_url: str,
+    method: str,
+    path: str,
+    payload: dict,
 ) -> Customer:
     body = _write_parsed(session, base_url, method, path, payload)
     entry = body.get("data")
@@ -239,7 +246,11 @@ def _write_customer(
 
 
 def _write_parsed(
-    session: requests.Session, base_url: str, method: str, path: str, payload: dict
+    session: requests.Session,
+    base_url: str,
+    method: str,
+    path: str,
+    payload: dict,
 ) -> dict:
     body = _request(session, method, path, base_url=base_url, payload=payload).json()
     if not isinstance(body, dict):

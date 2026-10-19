@@ -57,12 +57,12 @@ def create_session(token: str) -> requests.Session:
 
 
 def list_fishes(session: requests.Session, base_url: str) -> list[Product]:
-    payload = _get_json(session, base_url, "/api/fishes", {"populate": "picture"})
+    payload = _get_parsed(session, base_url, "/api/fishes", {"populate": "picture"})
     return [_to_product(item, base_url) for item in payload.get("data", [])]
 
 
 def get_fish(session: requests.Session, base_url: str, document_id: str) -> Product:
-    payload = _get_json(
+    payload = _get_parsed(
         session, base_url, f"/api/fishes/{document_id}", {"populate": "picture"}
     )
     item = payload.get("data")
@@ -79,7 +79,7 @@ def download_picture(session: requests.Session, url: str) -> bytes:
 def get_cart(
     session: requests.Session, base_url: str, telegram_user_id: str
 ) -> Cart | None:
-    payload = _get_json(
+    payload = _get_parsed(
         session,
         base_url,
         "/api/carts",
@@ -144,7 +144,7 @@ def add_item(
 
     for item in cart.items:
         if item.fish_document_id == fish_document_id:
-            _write_json(
+            _write_parsed(
                 session,
                 base_url,
                 "PUT",
@@ -153,7 +153,7 @@ def add_item(
             )
             return
 
-    _write_json(
+    _write_parsed(
         session,
         base_url,
         "POST",
@@ -183,7 +183,7 @@ def remove_item(
 def get_customer(
     session: requests.Session, base_url: str, telegram_user_id: str
 ) -> Customer | None:
-    payload = _get_json(
+    payload = _get_parsed(
         session,
         base_url,
         "/api/customers",
@@ -231,14 +231,14 @@ def save_customer(
 def _write_customer(
     session: requests.Session, base_url: str, method: str, path: str, payload: dict
 ) -> Customer:
-    body = _write_json(session, base_url, method, path, payload)
+    body = _write_parsed(session, base_url, method, path, payload)
     entry = body.get("data")
     if not isinstance(entry, dict):
         raise requests.RequestException(f"Strapi не вернул data на {method} {path}")
     return _to_customer(entry)
 
 
-def _write_json(
+def _write_parsed(
     session: requests.Session, base_url: str, method: str, path: str, payload: dict
 ) -> dict:
     body = _request(session, method, path, base_url=base_url, payload=payload).json()
@@ -249,7 +249,7 @@ def _write_json(
     return body
 
 
-def _get_json(
+def _get_parsed(
     session: requests.Session, base_url: str, path: str, params: dict[str, str]
 ) -> dict:
     payload = _request(session, "GET", path, base_url=base_url, params=params).json()

@@ -11,7 +11,7 @@ from telegram.ext import ContextTypes
 from keyboards import cart_keyboard, product_keyboard, products_keyboard
 from protocol import HANDLE_CART, HANDLE_MENU, START
 from sending import reply_text, send_message, send_photo
-from strapi import Cart, Product, StrapiError, client_from_env, fetch_products
+from strapi import Cart, Product, StrapiClient, StrapiError, fetch_products
 
 logger = logging.getLogger(__name__)
 
@@ -43,12 +43,12 @@ def cart_text(cart: Cart | None) -> str:
     return "\n".join(lines)
 
 
-async def send_products(update: Update) -> str:
+async def send_products(update: Update, client: StrapiClient) -> str:
     message = update.effective_message
     if message is None:
         return START
     try:
-        products = await fetch_products()
+        products = await fetch_products(client)
     except StrapiError as exc:
         logger.error("Не удалось получить каталог: %s", exc)
         await reply_text(message, "Каталог недоступен, попробуйте позже.")
@@ -57,14 +57,13 @@ async def send_products(update: Update) -> str:
     return HANDLE_MENU
 
 
-async def send_cart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
+async def send_cart(update: Update, client: StrapiClient) -> str:
     message = update.effective_message
     user = update.effective_user
     if message is None or user is None:
         return START
 
     try:
-        client = client_from_env()
         cart = await asyncio.to_thread(client.get_cart, str(user.id))
     except StrapiError as exc:
         logger.error("Не удалось получить корзину: %s", exc)

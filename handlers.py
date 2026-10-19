@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import cast
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -18,34 +19,40 @@ from protocol import (
     PAY,
     REMOVE_ITEM_PREFIX,
     SHOW_CART,
+    STRAPI_CLIENT_KEY,
     WAITING_EMAIL,
 )
 from screens import delete_menu, send_cart, send_product_card, send_products
 from sending import answer_query, reply_text, send_message
-from strapi import StrapiError, client_from_env, fetch_picture, fetch_product
+from strapi import StrapiClient, StrapiError, fetch_picture, fetch_product
 
 logger = logging.getLogger(__name__)
 
 
+def strapi_client(context: ContextTypes.DEFAULT_TYPE) -> StrapiClient:
+    return cast(StrapiClient, context.bot_data[STRAPI_CLIENT_KEY])
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
-    return await send_products(update)
+    return await send_products(update, strapi_client(context))
 
 
 async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
+    client = strapi_client(context)
     query = update.callback_query
     chat = update.effective_chat
     if query is None or query.data is None:
-        return await send_products(update)
+        return await send_products(update, client)
     await answer_query(query)
     if query.data == BACK_TO_LIST:
-        return await send_products(update)
+        return await send_products(update, client)
     if query.data == SHOW_CART:
-        return await send_cart(update, context)
+        return await send_cart(update, client)
     if chat is None:
         return HANDLE_MENU
 
     try:
-        product = await fetch_product(query.data)
+        product = await fetch_product(client, query.data)
     except StrapiError as exc:
         logger.error("Не удалось получить товар %s: %s", query.data, exc)
         await send_message(context, chat.id, "Товар недоступен, попробуйте позже.")
@@ -54,7 +61,7 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str
     picture: bytes | None = None
     if product.picture_url is not None:
         try:
-            picture = await fetch_picture(product.picture_url)
+            picture = await fetch_picture(client, product.picture_url)
         except StrapiError as exc:
             logger.error("Не удалось скачать картинку %s: %s", product.title, exc)
 
@@ -67,6 +74,7 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str
 
 
 async def handle_description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
+    client = strapi_client(context)
     query = update.callback_query
     if (
         query is not None
@@ -80,30 +88,31 @@ async def handle_description(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     if query is not None and query.data == SHOW_CART:
         await answer_query(query)
-        return await send_cart(update, context)
+        return await send_cart(update, client)
 
     await answer_query(query)
-    return await send_products(update)
+    return await send_products(update, client)
 
 
 async def handle_cart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
+    client = strapi_client(context)
     query = update.callback_query
     data = query.data if query is not None else None
     if query is None or data is None:
-        return await send_cart(update, context)
+        return await send_cart(update, client)
 
     await answer_query(query)
 
     if data.startswith(REMOVE_ITEM_PREFIX):
         await remove_cart_item(update, context, data[len(REMOVE_ITEM_PREFIX) :])
-        return await send_cart(update, context)
+        return await send_cart(update, client)
 
     if data == PAY:
         return await ask_email(update)
 
     if data == BACK_TO_LIST:
-        return await send_products(update)
-    return await send_cart(update, context)
+        return await send_products(update, client)
+    return await send_cart(update, client)
 
 
 async def add_item_to_cart(
@@ -118,7 +127,7 @@ async def add_item_to_cart(
         return
 
     try:
-        client = client_from_env()
+        client = strapi_client(context)
         await asyncio.to_thread(client.add_item, str(user.id), fish_document_id)
     except StrapiError as exc:
         logger.error("Не удалось добавить товар в корзину: %s", exc)
@@ -134,7 +143,7 @@ async def remove_cart_item(
     update: Update, context: ContextTypes.DEFAULT_TYPE, cart_item_document_id: str
 ) -> None:
     try:
-        client = client_from_env()
+        client = strapi_client(context)
         await asyncio.to_thread(client.remove_item, cart_item_document_id)
     except StrapiError as exc:
         logger.error("Не удалось убрать товар из корзины: %s", exc)
@@ -144,12 +153,13 @@ async def remove_cart_item(
 
 
 async def handle_waiting_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
+    client = strapi_client(context)
     query = update.callback_query
     if query is not None:
         await answer_query(query)
         if query.data == SHOW_CART:
-            return await send_cart(update, context)
-        return await send_products(update)
+            return await send_cart(update, client)
+        return await send_products(update, client)
 
     message = update.effective_message
     user = update.effective_user
@@ -165,7 +175,7 @@ async def handle_waiting_email(update: Update, context: ContextTypes.DEFAULT_TYP
     user_id = str(user.id) if user is not None else None
     logger.info("Почта заказчика: %s (telegram_user_id=%s)", email, user_id)
 
-    saved = user_id is not None and await save_customer_contact(user_id, email)
+    saved = user_id is not None and await save_customer_contact(client, user_id, email)
     if saved:
         text = f"Записал {email}. Продажники свяжутся с вами по почте."
     else:
@@ -174,7 +184,7 @@ async def handle_waiting_email(update: Update, context: ContextTypes.DEFAULT_TYP
             f"Продажники свяжутся с вами по почте."
         )
     await reply_text(message, text)
-    return await send_products(update)
+    return await send_products(update, client)
 
 
 async def ask_email(update: Update) -> str:
@@ -186,9 +196,10 @@ async def ask_email(update: Update) -> str:
     return WAITING_EMAIL
 
 
-async def save_customer_contact(telegram_user_id: str, email: str) -> bool:
+async def save_customer_contact(
+    client: StrapiClient, telegram_user_id: str, email: str
+) -> bool:
     try:
-        client = client_from_env()
         customer = await asyncio.to_thread(client.save_customer, telegram_user_id, email)
     except StrapiError as exc:
         logger.error("Не удалось сохранить клиента %s в Strapi: %s", telegram_user_id, exc)

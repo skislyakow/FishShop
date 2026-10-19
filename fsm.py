@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-import os
+from typing import cast
 
 import redis
 from telegram import Update
@@ -19,6 +19,7 @@ from protocol import (
     HANDLE_CART,
     HANDLE_DESCRIPTION,
     HANDLE_MENU,
+    REDIS_KEY,
     START,
     WAITING_EMAIL,
     Handler,
@@ -27,8 +28,6 @@ from protocol import (
 logger = logging.getLogger(__name__)
 
 STATE_KEY_PREFIX = "state:"
-
-_database: redis.Redis | None = None
 
 STATES_FUNCTIONS: dict[str, Handler] = {
     START: start,
@@ -40,7 +39,7 @@ STATES_FUNCTIONS: dict[str, Handler] = {
 
 
 async def handle_users_reply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    db = get_database_connection()
+    db = redis_from_context(context)
 
     if update.callback_query is not None:
         user_reply = update.callback_query.data
@@ -90,13 +89,11 @@ def _state_key(chat_id: int) -> str:
     return f"{STATE_KEY_PREFIX}{chat_id}"
 
 
-def get_database_connection() -> redis.Redis:
-    global _database
-    if _database is None:
-        _database = redis.Redis(
-            host=os.getenv("REDIS_HOST", "127.0.0.1"),
-            port=int(os.getenv("REDIS_PORT", "6379")),
-            password=os.getenv("REDIS_PASSWORD") or None,
-            db=0,
-        )
-    return _database
+def create_database_connection(
+    host: str, port: int, password: str | None
+) -> redis.Redis:
+    return redis.Redis(host=host, port=port, password=password, db=0)
+
+
+def redis_from_context(context: ContextTypes.DEFAULT_TYPE) -> redis.Redis:
+    return cast(redis.Redis, context.bot_data[REDIS_KEY])

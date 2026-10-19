@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import sys
 
 from dotenv import load_dotenv
@@ -16,8 +15,11 @@ from telegram.ext import (
     filters,
 )
 
-from fsm import get_database_connection, handle_users_reply
+from fsm import create_database_connection, handle_users_reply
+from protocol import REDIS_KEY, STRAPI_CLIENT_KEY
 from sending import CONNECT_TIMEOUT, READ_TIMEOUT
+from settings import Settings
+from strapi import StrapiClient
 
 logger = logging.getLogger(__name__)
 
@@ -39,29 +41,42 @@ def main() -> int:
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("telegram.ext").setLevel(logging.CRITICAL)
 
-    token = os.getenv("TELEGRAM_TOKEN")
-    if not token:
+    settings = Settings.from_env()
+
+    if not settings.telegram_token:
         logger.error("TELEGRAM_TOKEN не задан. Добавь его в .env (см. .env.example)")
         return 1
+    if not settings.strapi_api_token:
+        logger.error(
+            "STRAPI_API_TOKEN не задан. Добавь его в .env (см. .env.example)"
+        )
+        return 1
 
-    db = get_database_connection()
+    db = create_database_connection(
+        settings.redis_host, settings.redis_port, settings.redis_password
+    )
     try:
         db.ping()
     except RedisError:
         logger.error(
             "Redis недоступен на %s:%s. Запусти его (в WSL: sudo service redis-server start)",
-            db.connection_pool.connection_kwargs["host"],
-            db.connection_pool.connection_kwargs["port"],
+            settings.redis_host,
+            settings.redis_port,
         )
         return 1
 
+    client = StrapiClient(settings.strapi_url, settings.strapi_api_token)
+
     application = (
         Application.builder()
-        .token(token)
+        .token(settings.telegram_token)
         .connect_timeout(CONNECT_TIMEOUT)
         .read_timeout(READ_TIMEOUT)
         .build()
     )
+
+    application.bot_data[REDIS_KEY] = db
+    application.bot_data[STRAPI_CLIENT_KEY] = client
 
     application.add_handler(CallbackQueryHandler(handle_users_reply))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_users_reply))

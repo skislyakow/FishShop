@@ -20,6 +20,9 @@ PAY = "pay"
 ADD_TO_CART_PREFIX = "add:"
 REMOVE_ITEM_PREFIX = "del:"
 
+REDIS_KEY = "redis"
+STRAPI_CLIENT_KEY = "strapi_client"
+
 MENU_LABEL = "В меню"
 PAY_LABEL = "Оплатить"
 

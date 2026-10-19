@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from dataclasses import dataclass
 
 import requests
 
-DEFAULT_BASE_URL = "http://localhost:1337"
 TIMEOUT_SECONDS = 10.0
 
 
@@ -298,26 +296,13 @@ def _to_customer(entry: dict) -> Customer:
     )
 
 
-def client_from_env() -> StrapiClient:
-    token = os.environ.get("STRAPI_API_TOKEN", "").strip()
-    if not token:
-        raise StrapiError(
-            "Не задан STRAPI_API_TOKEN. Скопируй .env.example в .env и впиши токен "
-            "(в админке Strapi: Settings → API Tokens)."
-        )
-    return StrapiClient(os.environ.get("STRAPI_URL", DEFAULT_BASE_URL), token)
-
-
-async def fetch_products() -> list[Product]:
-    client = client_from_env()
+async def fetch_products(client: StrapiClient) -> list[Product]:
     return await asyncio.to_thread(client.list_fishes)
 
 
-async def fetch_product(document_id: str) -> Product:
-    client = client_from_env()
+async def fetch_product(client: StrapiClient, document_id: str) -> Product:
     return await asyncio.to_thread(client.get_fish, document_id)
 
 
-async def fetch_picture(url: str) -> bytes:
-    client = client_from_env()
+async def fetch_picture(client: StrapiClient, url: str) -> bytes:
     return await asyncio.to_thread(client.download_picture, url)

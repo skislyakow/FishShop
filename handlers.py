@@ -27,7 +27,6 @@ from protocol import (
 from screens import delete_menu, send_cart, send_product_card, send_products
 from sending import answer_query, reply_text, send_message
 from strapi import (
-    StrapiError,
     add_item,
     fetch_picture,
     fetch_product,
@@ -65,7 +64,7 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str
 
     try:
         product = await fetch_product(session, base_url, query.data)
-    except StrapiError as exc:
+    except requests.RequestException as exc:
         logger.error("Не удалось получить товар %s: %s", query.data, exc)
         await send_message(context, chat.id, "Товар недоступен, попробуйте позже.")
         return HANDLE_MENU
@@ -74,7 +73,7 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str
     if product.picture_url is not None:
         try:
             picture = await fetch_picture(session, product.picture_url)
-        except StrapiError as exc:
+        except requests.RequestException as exc:
             logger.error("Не удалось скачать картинку %s: %s", product.title, exc)
 
     await send_product_card(context, chat.id, product, picture)
@@ -93,9 +92,7 @@ async def handle_description(update: Update, context: ContextTypes.DEFAULT_TYPE)
         and query.data is not None
         and query.data.startswith(ADD_TO_CART_PREFIX)
     ):
-        await add_item_to_cart(
-            update, context, query.data[len(ADD_TO_CART_PREFIX) :]
-        )
+        await add_item_to_cart(update, context, query.data[len(ADD_TO_CART_PREFIX) :])
         return HANDLE_DESCRIPTION
 
     if query is not None and query.data == SHOW_CART:
@@ -143,7 +140,7 @@ async def add_item_to_cart(
         await asyncio.to_thread(
             add_item, session, base_url, str(user.id), fish_document_id
         )
-    except StrapiError as exc:
+    except requests.RequestException as exc:
         logger.error("Не удалось добавить товар в корзину: %s", exc)
         await send_message(
             context, chat.id, "Не удалось добавить товар в корзину, попробуйте позже."
@@ -158,17 +155,17 @@ async def remove_cart_item(
 ) -> None:
     try:
         session, base_url = strapi_api(context)
-        await asyncio.to_thread(
-            remove_item, session, base_url, cart_item_document_id
-        )
-    except StrapiError as exc:
+        await asyncio.to_thread(remove_item, session, base_url, cart_item_document_id)
+    except requests.RequestException as exc:
         logger.error("Не удалось убрать товар из корзины: %s", exc)
         message = update.effective_message
         if message is not None:
             await reply_text(message, "Не удалось убрать товар, попробуйте позже.")
 
 
-async def handle_waiting_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
+async def handle_waiting_email(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> str:
     session, base_url = strapi_api(context)
     query = update.callback_query
     if query is not None:
@@ -221,8 +218,10 @@ async def save_customer_contact(
         customer = await asyncio.to_thread(
             save_customer, session, base_url, telegram_user_id, email
         )
-    except StrapiError as exc:
-        logger.error("Не удалось сохранить клиента %s в Strapi: %s", telegram_user_id, exc)
+    except requests.RequestException as exc:
+        logger.error(
+            "Не удалось сохранить клиента %s в Strapi: %s", telegram_user_id, exc
+        )
         return False
     logger.info(
         "Клиент сохранён в CMS: documentId=%s, email=%s",

@@ -12,7 +12,7 @@ from telegram.ext import ContextTypes
 from keyboards import cart_keyboard, product_keyboard, products_keyboard
 from protocol import HANDLE_CART, HANDLE_MENU, START
 from sending import reply_text, send_message, send_photo
-from strapi import Cart, Product, StrapiError, fetch_products, get_cart
+from strapi import Cart, Product, fetch_products, get_cart
 
 logger = logging.getLogger(__name__)
 
@@ -52,17 +52,17 @@ async def send_products(
         return START
     try:
         products = await fetch_products(session, base_url)
-    except StrapiError as exc:
+    except requests.RequestException as exc:
         logger.error("Не удалось получить каталог: %s", exc)
         await reply_text(message, "Каталог недоступен, попробуйте позже.")
         return START
-    await reply_text(message, "Выберите рыбу:", reply_markup=products_keyboard(products))
+    await reply_text(
+        message, "Выберите рыбу:", reply_markup=products_keyboard(products)
+    )
     return HANDLE_MENU
 
 
-async def send_cart(
-    update: Update, session: requests.Session, base_url: str
-) -> str:
+async def send_cart(update: Update, session: requests.Session, base_url: str) -> str:
     message = update.effective_message
     user = update.effective_user
     if message is None or user is None:
@@ -70,7 +70,7 @@ async def send_cart(
 
     try:
         cart = await asyncio.to_thread(get_cart, session, base_url, str(user.id))
-    except StrapiError as exc:
+    except requests.RequestException as exc:
         logger.error("Не удалось получить корзину: %s", exc)
         await reply_text(message, "Корзина недоступна, попробуйте позже.")
         return HANDLE_MENU
@@ -96,7 +96,9 @@ async def send_product_card(
         )
         if photo_sent:
             return
-        logger.info("Картинка товара %s не ушла, отправляю карточку текстом", product.title)
+        logger.info(
+            "Картинка товара %s не ушла, отправляю карточку текстом", product.title
+        )
     await send_message(
         context, chat_id, card, reply_markup=product_keyboard(product.document_id)
     )

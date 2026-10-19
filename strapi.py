@@ -8,14 +8,6 @@ import requests
 TIMEOUT_SECONDS = 10.0
 
 
-class StrapiError(RuntimeError):
-    pass
-
-
-class CartAlreadyExists(StrapiError):
-    pass
-
-
 @dataclass(frozen=True)
 class Product:
     id: int
@@ -75,38 +67,13 @@ def get_fish(session: requests.Session, base_url: str, document_id: str) -> Prod
     )
     item = payload.get("data")
     if not isinstance(item, dict):
-        raise StrapiError(f"Strapi не вернул товар {document_id}")
+        raise requests.RequestException(f"Strapi не вернул товар {document_id}")
     return _to_product(item, base_url)
 
 
 def download_picture(session: requests.Session, url: str) -> bytes:
     response = _request(session, "GET", url, headers={"Accept": "*/*"})
     return response.content
-
-
-def create_cart(
-    session: requests.Session, base_url: str, telegram_user_id: str
-) -> str:
-    response = _request(
-        session,
-        "POST",
-        "/api/carts",
-        base_url=base_url,
-        payload={"data": {"telegram_user_id": telegram_user_id}},
-        ok_statuses=(200, 201, 400),
-    )
-    if response.status_code == 400:
-        if "must be unique" in response.text.lower():
-            raise CartAlreadyExists(
-                f"Корзина для пользователя {telegram_user_id} уже существует"
-            )
-        raise StrapiError(
-            f"Strapi ответил 400 на POST /api/carts: {response.text[:200]}"
-        )
-    document_id = (response.json().get("data") or {}).get("documentId")
-    if isinstance(document_id, str) and document_id:
-        return document_id
-    raise StrapiError("Strapi создал корзину, но не вернул documentId")
 
 
 def get_cart(
@@ -125,6 +92,47 @@ def get_cart(
     return _to_cart(entry) if entry is not None else None
 
 
+def get_or_create_cart(
+    session: requests.Session, base_url: str, telegram_user_id: str
+) -> Cart:
+    cart = get_cart(session, base_url, telegram_user_id)
+    if cart is not None:
+        return cart
+
+    response = _request(
+        session,
+        "POST",
+        "/api/carts",
+        base_url=base_url,
+        payload={"data": {"telegram_user_id": telegram_user_id}},
+        ok_statuses=(200, 201, 400),
+    )
+    if response.status_code == 400:
+        if "must be unique" not in response.text.lower():
+            raise requests.HTTPError(
+                f"Strapi ответил 400 на POST /api/carts: {response.text[:200]}",
+                response=response,
+            )
+        cart = get_cart(session, base_url, telegram_user_id)
+        if cart is None:
+            raise requests.RequestException(
+                f"Корзину для пользователя {telegram_user_id} "
+                f"не удалось ни создать, ни найти"
+            )
+        return cart
+
+    document_id = (response.json().get("data") or {}).get("documentId")
+    if not isinstance(document_id, str) or not document_id:
+        raise requests.RequestException(
+            "Strapi создал корзину, но не вернул documentId"
+        )
+    return Cart(
+        document_id=document_id,
+        telegram_user_id=telegram_user_id,
+        items=[],
+    )
+
+
 def add_item(
     session: requests.Session,
     base_url: str,
@@ -132,20 +140,7 @@ def add_item(
     fish_document_id: str,
     quantity_kg: float = 1.0,
 ) -> None:
-    cart = get_cart(session, base_url, telegram_user_id)
-    if cart is None:
-        try:
-            cart = Cart(
-                document_id=create_cart(session, base_url, telegram_user_id),
-                telegram_user_id=telegram_user_id,
-                items=[],
-            )
-        except CartAlreadyExists:
-            cart = get_cart(session, base_url, telegram_user_id)
-        if cart is None:
-            raise StrapiError(
-                f"Корзину для пользователя {telegram_user_id} не удалось ни создать, ни найти"
-            )
+    cart = get_or_create_cart(session, base_url, telegram_user_id)
 
     for item in cart.items:
         if item.fish_document_id == fish_document_id:
@@ -239,7 +234,7 @@ def _write_customer(
     body = _write_json(session, base_url, method, path, payload)
     entry = body.get("data")
     if not isinstance(entry, dict):
-        raise StrapiError(f"Strapi не вернул data на {method} {path}")
+        raise requests.RequestException(f"Strapi не вернул data на {method} {path}")
     return _to_customer(entry)
 
 
@@ -248,7 +243,9 @@ def _write_json(
 ) -> dict:
     body = _request(session, method, path, base_url=base_url, payload=payload).json()
     if not isinstance(body, dict):
-        raise StrapiError(f"Strapi вернул неожиданный ответ на {method} {path}")
+        raise requests.RequestException(
+            f"Strapi вернул неожиданный ответ на {method} {path}"
+        )
     return body
 
 
@@ -257,7 +254,9 @@ def _get_json(
 ) -> dict:
     payload = _request(session, "GET", path, base_url=base_url, params=params).json()
     if not isinstance(payload, dict):
-        raise StrapiError(f"Strapi вернул неожиданный ответ на GET {path}")
+        raise requests.RequestException(
+            f"Strapi вернул неожиданный ответ на GET {path}"
+        )
     return payload
 
 
@@ -283,14 +282,15 @@ def _request(
             timeout=TIMEOUT_SECONDS,
         )
     except requests.RequestException as exc:
-        raise StrapiError(
+        raise requests.RequestException(
             f"Не удалось обратиться к Strapi по {method} {url}: {exc}"
         ) from exc
 
     if response.status_code not in ok_statuses:
-        raise StrapiError(
+        raise requests.HTTPError(
             f"Strapi ответил {response.status_code} на {method} {url}: "
-            f"{response.text[:200]}"
+            f"{response.text[:200]}",
+            response=response,
         )
     return response
 

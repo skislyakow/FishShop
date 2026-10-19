@@ -41,7 +41,7 @@ def main() -> int:
 
     token = os.getenv("TELEGRAM_TOKEN")
     if not token:
-        logger.error("TELEGRAM_TOKEN не задан. Добавь его в bot/.env (см. bot/.env.example)")
+        logger.error("TELEGRAM_TOKEN не задан. Добавь его в .env (см. .env.example)")
         return 1
 
     db = get_database_connection()
@@ -71,7 +71,7 @@ def main() -> int:
     try:
         application.run_polling(allowed_updates=Update.ALL_TYPES)
     except InvalidToken:
-        logger.error("Telegram не принял токен. Проверь TELEGRAM_TOKEN в bot/.env")
+        logger.error("Telegram не принял токен. Проверь TELEGRAM_TOKEN в .env")
         return 1
     except TelegramError as exc:
         logger.error(

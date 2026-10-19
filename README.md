@@ -1,11 +1,9 @@
 # FishShop — магазин рыбы в Telegram
 
 <p align="center">
-  <img alt="Strapi 5" src="https://img.shields.io/badge/Strapi%205-4945FF?style=for-the-badge&logo=strapi&logoColor=white">
-  <img alt="Node.js 20+" src="https://img.shields.io/badge/Node.js%2020%2B-5FA04E?style=for-the-badge&logo=nodedotjs&logoColor=white">
-  <img alt="SQLite" src="https://img.shields.io/badge/SQLite-003B57?style=for-the-badge&logo=sqlite&logoColor=white">
   <img alt="Python 3.11+" src="https://img.shields.io/badge/Python%203.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white">
-  <img alt="python-telegram-bot" src="https://img.shields.io/badge/python--telegram--bot-26A5E4?style=for-the-badge&logo=telegram&logoColor=white">
+  <img alt="python-telegram-bot" src="https://img.shields.io/badge/python--telegram--bot%2022-26A5E4?style=for-the-badge&logo=telegram&logoColor=white">
+  <img alt="Strapi 5" src="https://img.shields.io/badge/Strapi%205-4945FF?style=for-the-badge&logo=strapi&logoColor=white">
   <img alt="Redis" src="https://img.shields.io/badge/Redis-FF4438?style=for-the-badge&logo=redis&logoColor=white">
   <img alt="uv" src="https://img.shields.io/badge/uv-DE5833?style=for-the-badge&logo=uv&logoColor=white">
 </p>
@@ -13,8 +11,9 @@
 **FishShop** — магазин морепродуктов прямо в Telegram: покупатель выбирает рыбу в каталоге,
 собирает корзину и оставляет контакт для заказа, не выходя из мессенджера.
 
-Каталог, корзины и покупатели живут в **Strapi** — headless CMS на Node.js с админкой и REST
-API. Бот — тонкий клиент этого API на Python; состояния диалогов хранятся в Redis.
+Бот — тонкий клиент REST API **Strapi**: каталог, корзины и покупатели живут в CMS, состояния
+диалогов — в Redis. Бэкенд и его схема данных вынесены в отдельный репозиторий
+**[FishShop CMS](https://github.com/skislyakow/FishShop-CMS)**.
 
 ## Возможности
 
@@ -31,45 +30,38 @@ API. Бот — тонкий клиент этого API на Python; состо
 
 ## Стек
 
-- **Node.js** 20–26 + npm
-- **Strapi** 5.x, JavaScript — headless CMS: каталог, корзины, покупатели, REST API
-- **SQLite** — локальная БД разработки (файл в `cms/.tmp/`)
-- **Python** 3.11+ и `uv` — окружение бота
-- **python-telegram-bot** 22 — Telegram-бот на стейт-машинах
-- **Redis** — состояния диалогов бота (`state:<chat_id>`)
+- **Python** 3.11+ и `uv` — окружение и запуск
+- **python-telegram-bot** 22 — бот на стейт-машинах
+- **requests** — клиент REST API Strapi
+- **Redis** — состояния диалогов (`state:<chat_id>`)
 
-## Как устроено
+## Структура
 
-| Путь | Назначение |
+| Файл | Роль |
 | --- | --- |
-| `cms/` | Strapi-проект: content-types `Fish`, `Cart`, `CartItem`, `Customer`, админка и REST API |
-| `bot/` | Telegram-бот (Python): каталог, карточки, корзина, сбор почты покупателя |
-| `docs/` | архитектура, настройка окружения, рабочие заметки |
-| `docs/adr/` | принятые архитектурные решения |
-| `scripts/`, `package.json` | кроссплатформенный бутстрап окружения (`npm run setup`) |
-| `AGENTS.md` | инструкции для AI-агентов, работающих в репозитории |
-| `GLOSSARY.md` | словарь предметной области |
+| `main.py` | точка входа: env, логи, проверка Redis и токена, регистрация хэндлеров, polling |
+| `protocol.py` | словарь диалога: состояния, callback-данные кнопок, тексты шага оплаты |
+| `sending.py` | отправка в Telegram с ретраями: сбой связи и лимиты гасятся здесь |
+| `keyboards.py` | inline-клавиатуры: каталог, карточка, корзина |
+| `screens.py` | тексты и отправка экранов: список, карточка, корзина |
+| `handlers.py` | логика переходов: меню, корзина, почта покупателя, контакт в CMS |
+| `fsm.py` | стейт-машина: карта состояний → хэндлеры, состояние в Redis |
+| `strapi.py` | клиент REST API Strapi; знает про HTTP, URL и токен |
 
-Путь покупателя: `/start` → каталог → карточка товара → «Добавить в корзину» → «Моя корзина» →
-«Оплатить» → почта → контакт сохранён в CMS, диалог возвращается в каталог.
+Модули импортируют друг друга по имени файла (запуск — из корня репозитория).
 
 ## Быстрый старт
 
 ### 1. Strapi
 
-```bash
-npm run setup            # зависимости cms/ и bot/, skills
-cp cms/.env.example cms/.env   # заполнить секреты (см. docs/SETUP.md)
-cd cms && npm run develop      # http://localhost:1337
-```
-
-В админке создай локального администратора и API-токен
-(**Settings → API Tokens**, тип **Full access**, срок Unlimited) — боту нужен записывающий
-доступ к корзинам и покупателям, не только чтение каталога.
+Бот работает с внешним Strapi. Подними его по инструкции из
+[FishShop CMS](https://github.com/skislyakow/FishShop-CMS): `npm run setup`, `cd cms && npm run develop`.
+В админке создай API-токен (**Settings → API Tokens**, тип **Full access**, срок Unlimited) —
+бот не только читает каталог, но и пишет корзины и контакты.
 
 ### 2. Redis
 
-Бот хранит состояния диалогов в Redis — в WSL Ubuntu он ставится и включается как сервис:
+Состояния диалогов хранятся в Redis. В WSL Ubuntu он ставится и включается как сервис:
 
 ```bash
 sudo service redis-server start
@@ -81,9 +73,8 @@ wsl -e redis-cli ping   # должен ответить PONG
 ### 3. Бот
 
 ```bash
-cd bot
-cp .env.example .env
-# TELEGRAM_TOKEN — от @BotFather, STRAPI_API_TOKEN и STRAPI_URL — из шага 1
+cp .env.example .env    # TELEGRAM_TOKEN, STRAPI_URL, STRAPI_API_TOKEN
+uv sync
 uv run python main.py
 ```
 
@@ -91,12 +82,17 @@ uv run python main.py
 «Каталог недоступен, попробуйте позже» и продолжит работать; для `api.telegram.org` из РФ
 нужен VPN — бот запустится и без него, но не сможет получать обновления.
 
-## Документация
+## Настройка
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — устройство бота, модель данных, работа с REST API
-- [docs/SETUP.md](docs/SETUP.md) — подготовка окружения по шагам
-- [docs/adr/](docs/adr/) — архитектурные решения (почему корзина живёт в Strapi, а не в Redis, и т.д.)
-- [GLOSSARY.md](GLOSSARY.md) — словарь предметной области
+| Переменная | Назначение |
+| --- | --- |
+| `TELEGRAM_TOKEN` | токен от @BotFather (`/newbot`), показывается один раз |
+| `TELEGRAM_BOT_NAME` | имя бота для справки, код его не использует |
+| `STRAPI_URL` | адрес Strapi, по умолчанию `http://localhost:1337` |
+| `STRAPI_API_TOKEN` | токен из админки Strapi, тип Full access |
+| `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` | подключение к Redis (по умолчанию `127.0.0.1:6379` без пароля) |
+
+`.env` в git не попадает; коммитится только `.env.example`.
 
 ## Планы
 

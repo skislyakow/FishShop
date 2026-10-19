@@ -302,7 +302,7 @@ def client_from_env() -> StrapiClient:
     token = os.environ.get("STRAPI_API_TOKEN", "").strip()
     if not token:
         raise StrapiError(
-            "Не задан STRAPI_API_TOKEN. Скопируй bot/.env.example в bot/.env и впиши токен "
+            "Не задан STRAPI_API_TOKEN. Скопируй .env.example в .env и впиши токен "
             "(в админке Strapi: Settings → API Tokens)."
         )
     return StrapiClient(os.environ.get("STRAPI_URL", DEFAULT_BASE_URL), token)

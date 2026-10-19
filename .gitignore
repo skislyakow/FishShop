@@ -12,33 +12,13 @@ Thumbs.db
 .env.*
 !.env.example
 
-# --- Node ---
-node_modules/
-npm-debug.log*
-yarn-error.log*
-
-# --- Strapi ---
-cms/.tmp/
-cms/.cache/
-cms/.strapi/
-cms/build/
-cms/dist/
-
-# --- Бэкапы данных Strapi (передаются вне git) ---
-backups/*
-!backups/.gitkeep
-*.tar
-*.tar.gz
-*.tar.gz.enc
-
-# --- Личные skills агента (восстанавливаются из skills-lock.json) ---
-.agents/skills/
-
-# --- Python (Telegram-бот, будущий bot/) ---
-bot/.venv/
+# --- Python ---
+.venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
-bot/.env
+
+# --- Личные skills агента ---
+.agents/skills/

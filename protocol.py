@@ -21,7 +21,8 @@ ADD_TO_CART_PREFIX = "add:"
 REMOVE_ITEM_PREFIX = "del:"
 
 REDIS_KEY = "redis"
-STRAPI_CLIENT_KEY = "strapi_client"
+STRAPI_SESSION_KEY = "strapi_session"
+STRAPI_URL_KEY = "strapi_url"
 
 MENU_LABEL = "В меню"
 PAY_LABEL = "Оплатить"

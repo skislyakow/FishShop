@@ -16,10 +16,10 @@ from telegram.ext import (
 )
 
 from fsm import create_database_connection, handle_users_reply
-from protocol import REDIS_KEY, STRAPI_CLIENT_KEY
+from protocol import REDIS_KEY, STRAPI_SESSION_KEY, STRAPI_URL_KEY
 from sending import CONNECT_TIMEOUT, READ_TIMEOUT
 from settings import Settings
-from strapi import StrapiClient
+from strapi import create_session
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +65,7 @@ def main() -> int:
         )
         return 1
 
-    client = StrapiClient(settings.strapi_url, settings.strapi_api_token)
+    session = create_session(settings.strapi_api_token)
 
     application = (
         Application.builder()
@@ -76,7 +76,8 @@ def main() -> int:
     )
 
     application.bot_data[REDIS_KEY] = db
-    application.bot_data[STRAPI_CLIENT_KEY] = client
+    application.bot_data[STRAPI_SESSION_KEY] = session
+    application.bot_data[STRAPI_URL_KEY] = settings.strapi_url
 
     application.add_handler(CallbackQueryHandler(handle_users_reply))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_users_reply))

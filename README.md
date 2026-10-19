@@ -102,8 +102,4 @@ uv run python main.py
 | `STRAPI_API_TOKEN` | токен из админки Strapi, тип Full access |
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` | подключение к Redis (по умолчанию `127.0.0.1:6379` без пароля) |
 
-`.env` в git не попадает; коммитится только `.env.example`.
-
-## Планы
-
-- [ ] Оформление заказа: content-types `Order` и `OrderItem`, статусы и подтверждение покупки
+Секреты лежат в `.env`, который в git не попадает; шаблон — `.env.example`.

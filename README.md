@@ -6,6 +6,7 @@
   <img alt="Strapi 5" src="https://img.shields.io/badge/Strapi%205-4945FF?style=for-the-badge&logo=strapi&logoColor=white">
   <img alt="Redis" src="https://img.shields.io/badge/Redis-FF4438?style=for-the-badge&logo=redis&logoColor=white">
   <img alt="uv" src="https://img.shields.io/badge/uv-DE5833?style=for-the-badge&logo=uv&logoColor=white">
+  <a href="LICENSE"><img alt="License MIT" src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge"></a>
 </p>
 
 **FishShop** — магазин морепродуктов прямо в Telegram: покупатель выбирает рыбу в каталоге,

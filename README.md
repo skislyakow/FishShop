@@ -97,7 +97,6 @@ uv run python main.py
 | Переменная | Назначение |
 | --- | --- |
 | `TELEGRAM_TOKEN` | токен от @BotFather (`/newbot`), показывается один раз |
-| `TELEGRAM_BOT_NAME` | имя бота для справки, код его не использует |
 | `STRAPI_URL` | адрес Strapi, по умолчанию `http://localhost:1337` |
 | `STRAPI_API_TOKEN` | токен из админки Strapi, тип Full access |
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` | подключение к Redis (по умолчанию `127.0.0.1:6379` без пароля) |
